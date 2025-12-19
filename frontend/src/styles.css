@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+}
+
+.road-tooltip {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+  padding: 10px 12px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+.road-tooltip.leaflet-tooltip-top:before,
+.road-tooltip.leaflet-tooltip-bottom:before,
+.road-tooltip.leaflet-tooltip-left:before,
+.road-tooltip.leaflet-tooltip-right:before {
+  border: none;
+}
