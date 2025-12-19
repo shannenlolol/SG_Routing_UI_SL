@@ -1,8 +1,8 @@
 // src/components/MapView.jsx
 import React, { useEffect, useMemo, useRef } from "react";
 import L from "leaflet";
-import "leaflet/dist/leaflet.css";
-import { formatRoadTypeLabel, ROAD_TYPE_META_BY_VALUE } from "../utils/roadTypes";
+import * as turf from "@turf/turf";
+import { ROAD_TYPE_META_BY_VALUE, normaliseTypeName } from "../utils/roadTypes";
 
 const TILE = {
   default: {
@@ -16,8 +16,231 @@ const TILE = {
 };
 
 function safeFeatures(gj) {
-  if (!gj || !Array.isArray(gj.features)) return [];
-  return gj.features.filter(Boolean);
+  if (!gj || typeof gj !== "object") return [];
+  const feats = gj.features;
+  if (!Array.isArray(feats)) return [];
+  return feats.filter(Boolean);
+}
+
+function getLat(p) {
+  if (!p) return null;
+  const v = p.lat ?? p.Lat;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
+function getLng(p) {
+  if (!p) return null;
+  const v = p.long ?? p.Long ?? p.lng ?? p.Lng;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function makePinIcon(fill, label) {
+  const svg = `
+    <svg width="34" height="42" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="display:block">
+      <path d="M12 22s7-5.2 7-12a7 7 0 0 0-14 0c0 6.8 7 12 7 12z"
+        fill="${fill}" stroke="white" stroke-width="2"/>
+      <circle cx="12" cy="10" r="3.7" fill="white" fill-opacity="0.98"/>
+      <text x="12" y="11.7" text-anchor="middle" dominant-baseline="middle"
+        font-size="10.5" font-family="Arial" font-weight="800" fill="${fill}">
+
+      </text>
+    </svg>
+  `;
+
+  return L.divIcon({
+    className: "sg-pin-icon",
+    html: svg,
+    iconSize: [34, 42],
+    iconAnchor: [17, 42],
+    tooltipAnchor: [0, -34],
+  });
+}
+
+// Colours matching your working react-leaflet version
+const ICON_START_SELECTED = makePinIcon("#ef4444", "S");
+const ICON_END_SELECTED = makePinIcon("#ef4444", "E");
+const ICON_START_NEAREST = makePinIcon("#0f172a", "S");
+const ICON_END_NEAREST = makePinIcon("#0f172a", "E");
+
+function pointTooltipHtml(title, pt) {
+  const lat = pt ? getLat(pt) : null;
+  const lng = pt ? getLng(pt) : null;
+  const latText = lat === null ? "—" : lat.toFixed(6);
+  const lngText = lng === null ? "—" : lng.toFixed(6);
+
+  return `
+    <div style="font-size:12px; line-height:1.25; padding:2px 2px;">
+      <div style="font-weight:800; color:#0f172a; margin-bottom:4px;">${escapeHtml(
+        title
+      )}</div>
+      <div style="display:grid; grid-template-columns:auto 1fr; gap:4px 10px;">
+        <div style="color:#64748b;">lat</div>
+        <div style="color:#0f172a; font-weight:700;">${escapeHtml(latText)}</div>
+        <div style="color:#64748b;">long</div>
+        <div style="color:#0f172a; font-weight:700;">${escapeHtml(lngText)}</div>
+      </div>
+    </div>
+  `;
+}
+
+function buildSnapLine(routeGeoJson) {
+  if (!routeGeoJson) return null;
+
+  const lines = [];
+
+  function pushGeom(geom) {
+    if (!geom) return;
+
+    if (geom.type === "LineString" && Array.isArray(geom.coordinates)) {
+      lines.push(geom.coordinates);
+      return;
+    }
+
+    if (geom.type === "MultiLineString" && Array.isArray(geom.coordinates)) {
+      for (const line of geom.coordinates) {
+        if (Array.isArray(line)) lines.push(line);
+      }
+    }
+  }
+
+  if (routeGeoJson.type === "FeatureCollection") {
+    for (const f of routeGeoJson.features || []) {
+      pushGeom(f && f.geometry);
+    }
+  } else if (routeGeoJson.type === "Feature") {
+    pushGeom(routeGeoJson.geometry);
+  } else {
+    pushGeom(routeGeoJson);
+  }
+
+  if (lines.length === 0) return null;
+  if (lines.length === 1) return turf.lineString(lines[0]);
+  return turf.multiLineString(lines);
+}
+
+function computeBoundsFromGeoJson(geojson) {
+  const feats = safeFeatures(geojson);
+  if (feats.length === 0) return null;
+
+  const coords = [];
+
+  function pushCoordsFromGeom(geom) {
+    if (!geom) return;
+
+    if (geom.type === "Point" && Array.isArray(geom.coordinates)) {
+      coords.push(geom.coordinates);
+      return;
+    }
+    if (geom.type === "LineString" && Array.isArray(geom.coordinates)) {
+      coords.push(...geom.coordinates);
+      return;
+    }
+    if (geom.type === "MultiLineString" && Array.isArray(geom.coordinates)) {
+      for (const line of geom.coordinates) {
+        if (Array.isArray(line)) coords.push(...line);
+      }
+      return;
+    }
+    if (geom.type === "Polygon" && Array.isArray(geom.coordinates)) {
+      for (const ring of geom.coordinates) {
+        if (Array.isArray(ring)) coords.push(...ring);
+      }
+      return;
+    }
+    if (geom.type === "MultiPolygon" && Array.isArray(geom.coordinates)) {
+      for (const poly of geom.coordinates) {
+        for (const ring of poly || []) {
+          if (Array.isArray(ring)) coords.push(...ring);
+        }
+      }
+    }
+  }
+
+  for (const f of feats) {
+    pushCoordsFromGeom(f.geometry);
+  }
+
+  if (coords.length === 0) return null;
+
+  let minLng = Infinity;
+  let minLat = Infinity;
+  let maxLng = -Infinity;
+  let maxLat = -Infinity;
+
+  for (const c of coords) {
+    if (!Array.isArray(c) || c.length < 2) continue;
+    const lng = Number(c[0]);
+    const lat = Number(c[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    minLng = Math.min(minLng, lng);
+    minLat = Math.min(minLat, lat);
+    maxLng = Math.max(maxLng, lng);
+    maxLat = Math.max(maxLat, lat);
+  }
+
+  if (!Number.isFinite(minLat)) return null;
+
+  return L.latLngBounds([minLat, minLng], [maxLat, maxLng]);
+}
+
+function roadTooltipHtml(props) {
+  const p = props && typeof props === "object" ? props : {};
+  const roadName =
+    p.road_name || p.roadName || p.name || p.ROAD_NAME || p.road || "";
+
+  const axisTypeRaw =
+    p.__axisType || p.axisType || p.road_type || p.roadType || "";
+  const axisType = String(axisTypeRaw || "").trim();
+
+  const meta =
+    ROAD_TYPE_META_BY_VALUE[String(axisType || "").trim()] ||
+    ROAD_TYPE_META_BY_VALUE[normaliseTypeName(axisType)];
+
+  const typeLabel =
+    (meta && (meta.label || meta.name)) || (axisType ? String(axisType) : "");
+
+  const safeName = roadName ? String(roadName) : "—";
+  const safeType = typeLabel ? String(typeLabel) : "—";
+
+  return `
+    <div style="font-size:12px; line-height:1.25; padding:2px 2px;">
+      <div style="display:grid; grid-template-columns:auto 1fr; gap:6px 10px;">
+        <div style="color:#64748b;">road name</div>
+        <div style="font-weight:700; color:#0f172a;">${escapeHtml(safeName)}</div>
+        <div style="color:#64748b;">road type</div>
+        <div style="font-weight:700; color:#0f172a;">${escapeHtml(safeType)}</div>
+      </div>
+    </div>
+  `;
+}
+
+function routeTooltipHtml(props) {
+  const p = props && typeof props === "object" ? props : {};
+  const roadName =
+    p.road_name || p.roadName || p.name || p.ROAD_NAME || p.road || "";
+  if (!roadName) return null;
+
+  return `
+    <div style="font-size:12px; line-height:1.25; padding:2px 2px;">
+      <div style="color:#64748b;">route segment</div>
+      <div style="font-weight:700; color:#0f172a;">${escapeHtml(
+        String(roadName)
+      )}</div>
+    </div>
+  `;
 }
 
 export default function MapView({
@@ -32,42 +255,73 @@ export default function MapView({
 }) {
   const mapDivRef = useRef(null);
   const mapRef = useRef(null);
-
   const tileLayerRef = useRef(null);
 
   const routeLayerRef = useRef(null);
   const roadLayerRef = useRef(null);
   const blockageLayerRef = useRef(null);
 
+  const startMarkerRef = useRef(null);
+  const endMarkerRef = useRef(null);
+  const nearestStartMarkerRef = useRef(null);
+  const nearestEndMarkerRef = useRef(null);
+
   const selectionModeRef = useRef(selectionMode);
   useEffect(() => {
     selectionModeRef.current = selectionMode;
   }, [selectionMode]);
+
+  const onPickPointRef = useRef(onPickPoint);
+  useEffect(() => {
+    onPickPointRef.current = onPickPoint;
+  }, [onPickPoint]);
 
   const base = useMemo(() => {
     const k = mapStyle === "simple" ? "simple" : "default";
     return TILE[k];
   }, [mapStyle]);
 
-  // --- NEW: guards for Leaflet timing issues in dev ---
-  const mapReadyRef = useRef(false);
-  const fitTimerRef = useRef(null);
+  const routeBounds = useMemo(() => computeBoundsFromGeoJson(routeGeoJson), [routeGeoJson]);
 
-  // Init map once
+  const snapLine = useMemo(() => buildSnapLine(routeGeoJson), [routeGeoJson]);
+
+  const nearestPoints = useMemo(() => {
+    const out = { start: null, end: null };
+    if (!snapLine) return out;
+
+    if (startPoint) {
+      const selected = turf.point([startPoint.long, startPoint.lat]);
+      const nearest = turf.nearestPointOnLine(snapLine, selected);
+      out.start = {
+        long: nearest.geometry.coordinates[0],
+        lat: nearest.geometry.coordinates[1],
+      };
+    }
+
+    if (endPoint) {
+      const selected = turf.point([endPoint.long, endPoint.lat]);
+      const nearest = turf.nearestPointOnLine(snapLine, selected);
+      out.end = {
+        long: nearest.geometry.coordinates[0],
+        lat: nearest.geometry.coordinates[1],
+      };
+    }
+
+    return out;
+  }, [snapLine, startPoint, endPoint]);
+
+  // INIT MAP ONCE (StrictMode-safe)
   useEffect(() => {
-    if (mapRef.current) return;
-
     const container = mapDivRef.current;
     if (!container) return;
+
+    const existing = mapRef.current;
+    if (existing && existing._container) return;
 
     const map = L.map(container, {
       center: [1.3521, 103.8198],
       zoom: 12,
       zoomControl: true,
-    });
-
-    map.whenReady(() => {
-      mapReadyRef.current = true;
     });
 
     const tile = L.tileLayer(base.url, { attribution: base.attribution });
@@ -85,50 +339,210 @@ export default function MapView({
     map.createPane("blockages");
     map.getPane("blockages").style.zIndex = 440;
 
-    map.on("click", (e) => {
+    map.createPane("markers");
+    map.getPane("markers").style.zIndex = 450;
+
+    const handleClick = (e) => {
       const mode = selectionModeRef.current;
       if (!mode) return;
-      if (typeof onPickPoint !== "function") return;
 
-      onPickPoint({
-        lat: e.latlng.lat,
-        long: e.latlng.lng,
-      });
-    });
+      const cb = onPickPointRef.current;
+      if (typeof cb !== "function") return;
+
+      cb({ lat: e.latlng.lat, long: e.latlng.lng });
+    };
+
+    map.on("click", handleClick);
 
     return () => {
-      window.clearTimeout(fitTimerRef.current);
-      mapReadyRef.current = false;
-
       try {
+        map.off("click", handleClick);
         map.off();
         map.remove();
       } catch (e) {
-        // ignore (dev/HMR edge cases)
+        // ignore
       }
 
       mapRef.current = null;
       tileLayerRef.current = null;
+
       routeLayerRef.current = null;
       roadLayerRef.current = null;
       blockageLayerRef.current = null;
+
+      startMarkerRef.current = null;
+      endMarkerRef.current = null;
+      nearestStartMarkerRef.current = null;
+      nearestEndMarkerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onPickPoint]); // ✅ do NOT depend on base.* (avoid remount on style toggle)
+  }, []);
 
-  // Update basemap URL only (do NOT recreate map, do NOT touch overlays)
+  // Update basemap URL only (no recreate)
   useEffect(() => {
-    if (!tileLayerRef.current) return;
+    const map = mapRef.current;
+    if (!map || !tileLayerRef.current) return;
 
     tileLayerRef.current.setUrl(base.url);
     tileLayerRef.current.options.attribution = base.attribution;
 
-    const map = mapRef.current;
-    if (map) {
-      const a = map.attributionControl;
-      if (a) a.setPrefix(false);
+    if (map.attributionControl) {
+      map.attributionControl.setPrefix(false);
     }
   }, [base.url, base.attribution]);
+
+  // Fit to route when it changes
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!routeBounds) return;
+
+    map.fitBounds(routeBounds, { padding: [24, 24] });
+  }, [routeBounds]);
+
+  // Selected start marker (red) + tooltip
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (startMarkerRef.current) {
+      map.removeLayer(startMarkerRef.current);
+      startMarkerRef.current = null;
+    }
+
+    const lat = getLat(startPoint);
+    const lng = getLng(startPoint);
+    if (lat === null || lng === null) return;
+
+    const marker = L.marker([lat, lng], {
+      pane: "markers",
+      icon: ICON_START_SELECTED,
+      keyboard: false,
+      zIndexOffset: 1000,
+    });
+
+    marker.bindTooltip(pointTooltipHtml("Selected Start", { lat, long: lng }), {
+      permanent: false,
+      sticky: true,
+      opacity: 0.98,
+      direction: "top",
+      offset: [0, -18],
+      className: "sg-tooltip",
+    });
+
+    marker.addTo(map);
+    startMarkerRef.current = marker;
+  }, [startPoint]);
+
+  // Selected end marker (red) + tooltip
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (endMarkerRef.current) {
+      map.removeLayer(endMarkerRef.current);
+      endMarkerRef.current = null;
+    }
+
+    const lat = getLat(endPoint);
+    const lng = getLng(endPoint);
+    if (lat === null || lng === null) return;
+
+    const marker = L.marker([lat, lng], {
+      pane: "markers",
+      icon: ICON_END_SELECTED,
+      keyboard: false,
+      zIndexOffset: 1000,
+    });
+
+    marker.bindTooltip(pointTooltipHtml("Selected End", { lat, long: lng }), {
+      permanent: false,
+      sticky: true,
+      opacity: 0.98,
+      direction: "top",
+      offset: [0, -18],
+      className: "sg-tooltip",
+    });
+
+    marker.addTo(map);
+    endMarkerRef.current = marker;
+  }, [endPoint]);
+
+  // Nearest start (black) + tooltip
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (nearestStartMarkerRef.current) {
+      map.removeLayer(nearestStartMarkerRef.current);
+      nearestStartMarkerRef.current = null;
+    }
+
+    const pt = nearestPoints && nearestPoints.start ? nearestPoints.start : null;
+    const lat = getLat(pt);
+    const lng = getLng(pt);
+    if (lat === null || lng === null) return;
+
+    const marker = L.marker([lat, lng], {
+      pane: "markers",
+      icon: ICON_START_NEAREST,
+      keyboard: false,
+      zIndexOffset: 900,
+    });
+
+    marker.bindTooltip(
+      pointTooltipHtml("Nearest Start on Route", { lat, long: lng }),
+      {
+        permanent: false,
+        sticky: true,
+        opacity: 0.98,
+        direction: "top",
+        offset: [0, -18],
+        className: "sg-tooltip",
+      }
+    );
+
+    marker.addTo(map);
+    nearestStartMarkerRef.current = marker;
+  }, [nearestPoints]);
+
+  // Nearest end (black) + tooltip
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (nearestEndMarkerRef.current) {
+      map.removeLayer(nearestEndMarkerRef.current);
+      nearestEndMarkerRef.current = null;
+    }
+
+    const pt = nearestPoints && nearestPoints.end ? nearestPoints.end : null;
+    const lat = getLat(pt);
+    const lng = getLng(pt);
+    if (lat === null || lng === null) return;
+
+    const marker = L.marker([lat, lng], {
+      pane: "markers",
+      icon: ICON_END_NEAREST,
+      keyboard: false,
+      zIndexOffset: 900,
+    });
+
+    marker.bindTooltip(
+      pointTooltipHtml("Nearest End on Route", { lat, long: lng }),
+      {
+        permanent: false,
+        sticky: true,
+        opacity: 0.98,
+        direction: "top",
+        offset: [0, -18],
+        className: "sg-tooltip",
+      }
+    );
+
+    marker.addTo(map);
+    nearestEndMarkerRef.current = marker;
+  }, [nearestPoints]);
 
   // Route layer
   useEffect(() => {
@@ -146,7 +560,23 @@ export default function MapView({
     const layer = L.geoJSON(routeGeoJson, {
       pane: "route",
       style: function style() {
-        return { color: "#0f172a", weight: 5, opacity: 0.9 };
+        return { color: "#2563eb", weight: 5, opacity: 0.9 };
+      },
+      pointToLayer: function pointToLayer(_feature, latlng) {
+        // Hide route point features (prevents default Leaflet marker/shadows)
+        return L.circleMarker(latlng, { radius: 0, opacity: 0, fillOpacity: 0 });
+      },
+      onEachFeature: function onEachFeature(feature, l) {
+        const props = feature && feature.properties ? feature.properties : {};
+        const html = routeTooltipHtml(props);
+        if (!html) return;
+
+        l.bindTooltip(html, {
+          sticky: true,
+          opacity: 0.95,
+          direction: "top",
+          className: "sg-tooltip",
+        });
       },
     });
 
@@ -154,7 +584,7 @@ export default function MapView({
     routeLayerRef.current = layer;
   }, [routeGeoJson]);
 
-  // Road-types overlay (always remove + replace)
+  // Road-types overlay
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -167,43 +597,14 @@ export default function MapView({
     const feats = safeFeatures(axisTypeGeoJson);
     if (feats.length === 0) return;
 
-    function escapeHtml(value) {
-      const s = String(value == null ? "" : value);
-      return s
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#39;");
-    }
-
-    function getTooltipHtml(feature) {
-      const props = feature && feature.properties ? feature.properties : {};
-
-      const roadName =
-        props.road_name || props.roadName || props.name || props.road || "";
-
-      const axisTypeValue =
-        props.__axisType || props.road_type || props.roadType || "";
-      const axisTypeLabel = formatRoadTypeLabel(axisTypeValue);
-
-      const rn = escapeHtml(roadName || "Unknown");
-      const rt = escapeHtml(axisTypeLabel || "Unknown");
-
-      return `
-      <div>
-        <div><span style="color:#64748b;font-size:12px;">road name</span> <b>${rn}</b></div>
-        <div><span style="color:#64748b;font-size:12px;">road type</span> <b>${rt}</b></div>
-      </div>
-    `;
-    }
-
     const layer = L.geoJSON(axisTypeGeoJson, {
       pane: "roads",
       style: function style(feature) {
         const props = feature && feature.properties ? feature.properties : {};
         const t = String(props.__axisType || "");
-        const meta = ROAD_TYPE_META_BY_VALUE[t];
+        const meta =
+          ROAD_TYPE_META_BY_VALUE[t] ||
+          ROAD_TYPE_META_BY_VALUE[normaliseTypeName(t)];
         const colour = meta && meta.colour ? meta.colour : "#64748b";
 
         return {
@@ -212,13 +613,15 @@ export default function MapView({
           opacity: 0.95,
         };
       },
-      onEachFeature: function onEachFeature(feature, leafletLayer) {
-        const html = getTooltipHtml(feature);
-        leafletLayer.bindTooltip(html, {
+      onEachFeature: function onEachFeature(feature, l) {
+        const props = feature && feature.properties ? feature.properties : {};
+        const html = roadTooltipHtml(props);
+
+        l.bindTooltip(html, {
           sticky: true,
-          direction: "auto",
           opacity: 0.95,
-          className: "road-tooltip",
+          direction: "top",
+          className: "sg-tooltip",
         });
       },
     });
@@ -245,50 +648,24 @@ export default function MapView({
       style: function style() {
         return { color: "#ef4444", weight: 2, opacity: 0.9 };
       },
+      onEachFeature: function onEachFeature(feature, l) {
+        const props = feature && feature.properties ? feature.properties : {};
+        const name = props.name || props.id || "";
+        if (!name) return;
+
+        l.bindTooltip(`Blockage: ${escapeHtml(String(name))}`, {
+          sticky: true,
+          opacity: 0.95,
+          direction: "top",
+          className: "sg-tooltip",
+        });
+      },
     });
 
     layer.addTo(map);
     blockageLayerRef.current = layer;
   }, [blockageGeoJson]);
 
-  // Safe fitBounds (prevents "_leaflet_pos" crash)
-  useEffect(() => {
-    const map = mapRef.current;
-    const container = mapDivRef.current;
-
-    if (!map || !container) return;
-    if (!mapReadyRef.current) return;
-    if (!startPoint || !endPoint) return;
-
-    window.clearTimeout(fitTimerRef.current);
-
-    fitTimerRef.current = window.setTimeout(() => {
-      const latestMap = mapRef.current;
-      const latestContainer = mapDivRef.current;
-
-      if (!latestMap || !latestContainer) return;
-      if (!document.body.contains(latestContainer)) return;
-
-      try {
-        latestMap.invalidateSize();
-
-        const bounds = L.latLngBounds(
-          [startPoint.lat, startPoint.long],
-          [endPoint.lat, endPoint.long]
-        );
-
-        if (bounds && bounds.isValid && bounds.isValid()) {
-          latestMap.fitBounds(bounds, { padding: [40, 40] });
-        }
-      } catch (e) {
-        // swallow to avoid crashing app in dev
-      }
-    }, 0);
-
-    return () => {
-      window.clearTimeout(fitTimerRef.current);
-    };
-  }, [startPoint, endPoint]);
-
   return <div ref={mapDivRef} className="h-full w-full" />;
 }
+  

@@ -4,7 +4,6 @@ import Sidebar from "./components/Sidebar";
 import Tabs from "./components/Tabs";
 import Field from "./components/Field";
 import Badge from "./components/Badge";
-import ModePicker from "./components/ModePicker";
 import Segmented from "./components/Segmented";
 import MapView from "./components/MapView";
 import FloatingInput from "./components/FloatingInput";
@@ -13,63 +12,20 @@ import ToastStack from "./components/ToastStack";
 import LoadingOverlay from "./components/LoadingOverlay";
 import { apiDelete, apiGet, apiPost } from "./api/client";
 import { normaliseRoadTypesForMode } from "./utils/geo";
-import { normaliseTypeName, sortRoadTypesByImportance } from "./utils/roadTypes";
+import {
+  ROAD_TYPE_META_BY_VALUE,
+  normaliseTypeName,
+  sortRoadTypesByImportance,
+} from "./utils/roadTypes";
 
 const TAB_ROUTE = "route";
 const TAB_ROAD_TYPES = "roadTypes";
 const TAB_BLOCKAGES = "blockages";
 
-// Keep these within the “11 algo types” only.
-const ROADTYPE_DEFAULTS = {
-  driving: [
-    "motorway",
-    "motorway_link",
-    "trunk",
-    "trunk_link",
-    "primary",
-    "primary_link",
-    "secondary",
-    "secondary_link",
-    "tertiary",
-    "tertiary_link",
-    "residential",
-  ],
-  cycling: ["secondary", "tertiary", "residential"],
-  walking: ["residential", "tertiary"],
-};
-
 function toNumber(value) {
   const n = Number(value);
-  if (Number.isFinite(n)) {
-    return n;
-  }
+  if (Number.isFinite(n)) return n;
   return null;
-}
-
-function tagFeaturesWithAxisType(geojson, axisTypeValue) {
-  const t = normaliseTypeName(axisTypeValue);
-  if (!geojson || typeof geojson !== "object") {
-    return geojson;
-  }
-  if (!Array.isArray(geojson.features)) {
-    return geojson;
-  }
-
-  return {
-    ...geojson,
-    features: geojson.features
-      .filter(Boolean)
-      .map((f) => {
-        const props = f && f.properties && typeof f.properties === "object" ? f.properties : {};
-        return {
-          ...f,
-          properties: {
-            ...props,
-            __axisType: t,
-          },
-        };
-      }),
-  };
 }
 
 export default function App() {
@@ -78,403 +34,34 @@ export default function App() {
   const [serverError, setServerError] = useState("");
   const pollTimer = useRef(null);
 
-  // -------------------- UI state --------------------
-  const [tab, setTab] = useState(TAB_ROUTE);
-
-  // Map selection mode: "start" | "end" | "blockage" | null
-  const [selectionMode, setSelectionMode] = useState(null);
-
-  // Map tiles (base map only)
-  const [mapStyle, setMapStyle] = useState("default");
-
-  // Mode (algorithm mode)
-  const [mode, setMode] = useState("driving");
-
-  // -------------------- Route points --------------------
-  const [start, setStart] = useState({
-    lat: "",
-    long: "",
-    description: "Start",
-  });
-
-  const [end, setEnd] = useState({
-    lat: "",
-    long: "",
-    description: "End",
-  });
-
-  const startPoint = useMemo(() => {
-    const lat = toNumber(start.lat);
-    const long = toNumber(start.long);
-    if (lat === null || long === null) {
-      return null;
-    }
-    return { lat, long };
-  }, [start.lat, start.long]);
-
-  const endPoint = useMemo(() => {
-    const lat = toNumber(end.lat);
-    const long = toNumber(end.long);
-    if (lat === null || long === null) {
-      return null;
-    }
-    return { lat, long };
-  }, [end.lat, end.long]);
-
-  const [routeGeoJson, setRouteGeoJson] = useState(null);
-
-  // -------------------- Road types (only VALID options) --------------------
-  const [validAxisTypes, setValidAxisTypes] = useState([]);
-  const [displayAxisTypes, setDisplayAxisTypes] = useState([]);
-  const displayAxisTypesRef = useRef([]);
-  useEffect(() => {
-    displayAxisTypesRef.current = displayAxisTypes;
-  }, [displayAxisTypes]);
-
-  const [axisTypeGeoJson, setAxisTypeGeoJson] = useState(null);
-
-  // cache: axisType -> geojson (already tagged with __axisType)
-  const axisGeoJsonCacheRef = useRef(new Map());
-
-  // Track pending loads for full-screen overlay
-  const pendingSetRef = useRef(new Set());
-  const [pendingAxisTypes, setPendingAxisTypes] = useState([]);
-
-  function syncPendingState() {
-    setPendingAxisTypes(Array.from(pendingSetRef.current));
-  }
-
-  function addPending(key) {
-    pendingSetRef.current.add(key);
-    syncPendingState();
-  }
-
-  function removePending(key) {
-    pendingSetRef.current.delete(key);
-    syncPendingState();
-  }
-
-  const roadLayerLoading = pendingAxisTypes.length > 0;
-
-  // Avoid duplicate in-flight requests
-  const inflightRef = useRef(new Map()); // axisType -> Promise
-
-  function setSelection(nextSelection) {
-    const next = Array.from(new Set((nextSelection || []).map(normaliseTypeName))).filter(Boolean);
-    displayAxisTypesRef.current = next;
-    setDisplayAxisTypes(next);
-  }
-
-  function rebuildAxisLayer(selection) {
-    const selected = Array.from(new Set((selection || []).map(normaliseTypeName))).filter(Boolean);
-
-    if (selected.length === 0) {
-      setAxisTypeGeoJson(null);
-      return;
-    }
-
-    const cache = axisGeoJsonCacheRef.current;
-    const features = [];
-
-    for (let i = 0; i < selected.length; i += 1) {
-      const t = selected[i];
-      const gj = cache.get(t);
-      if (gj && Array.isArray(gj.features)) {
-        features.push(...gj.features);
-      }
-    }
-
-    setAxisTypeGeoJson({
-      type: "FeatureCollection",
-      features,
-    });
-  }
-
-  // Keep map layer consistent with selection even when switching tabs
-  useEffect(() => {
-    rebuildAxisLayer(displayAxisTypes);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayAxisTypes]);
-
-  async function ensureAxisTypeLoaded(axisTypeValue) {
-    const t = normaliseTypeName(axisTypeValue);
-    if (!t) {
-      return null;
-    }
-
-    const cache = axisGeoJsonCacheRef.current;
-    if (cache.has(t)) {
-      return cache.get(t);
-    }
-
-    const inflight = inflightRef.current;
-    if (inflight.has(t)) {
-      return inflight.get(t);
-    }
-
-    const p = (async () => {
-      const gj = await apiGet(`/axisType/${encodeURIComponent(t)}`);
-      const tagged = tagFeaturesWithAxisType(gj, t);
-      cache.set(t, tagged);
-      return tagged;
-    })();
-
-    inflight.set(t, p);
-
-    try {
-      const result = await p;
-      return result;
-    } finally {
-      inflight.delete(t);
-    }
-  }
-
-  function getModeDisplayDefaults(nextMode, validList) {
-    const wanted = Array.isArray(ROADTYPE_DEFAULTS[nextMode])
-      ? ROADTYPE_DEFAULTS[nextMode].map(normaliseTypeName)
-      : [];
-
-    const valid = Array.isArray(validList) ? validList.map(normaliseTypeName) : [];
-    const filtered = wanted.filter((x) => valid.includes(x));
-
-    if (filtered.length > 0) {
-      return filtered;
-    }
-
-    // fallback: first few valid types (already ordered)
-    return valid.slice(0, 6);
-  }
-
-  async function applySelection(nextSelection) {
-    const selected = Array.from(new Set((nextSelection || []).map(normaliseTypeName))).filter(Boolean);
-    setSelection(selected);
-
-    // Which ones need fetching?
-    const cache = axisGeoJsonCacheRef.current;
-    const missing = [];
-
-    for (let i = 0; i < selected.length; i += 1) {
-      const t = selected[i];
-      if (!cache.has(t)) {
-        missing.push(t);
-      }
-    }
-
-    if (missing.length === 0) {
-      rebuildAxisLayer(displayAxisTypesRef.current);
-      return;
-    }
-
-    for (let i = 0; i < missing.length; i += 1) {
-      addPending(missing[i]);
-    }
-
-    try {
-      await Promise.all(
-        missing.map(async (t) => {
-          try {
-            await ensureAxisTypeLoaded(t);
-          } finally {
-            removePending(t);
-          }
-        })
-      );
-    } catch (err) {
-      showToast("bad", err && err.message ? err.message : "Failed to load road type layer(s)");
-    } finally {
-      // Rebuild using *current* selection (handles user toggling mid-load)
-      rebuildAxisLayer(displayAxisTypesRef.current);
-    }
-  }
-
-  async function selectAllRoadTypes() {
-    const list = Array.isArray(validAxisTypes) ? validAxisTypes : [];
-    await applySelection(list);
-  }
-
-  async function toggleRoadType(typeName, nextChecked) {
-    const t = normaliseTypeName(typeName);
-    if (!t) {
-      return;
-    }
-
-    const current = displayAxisTypesRef.current;
-    let next = [];
-
-    if (nextChecked) {
-      next = Array.from(new Set([...current, t]));
-    } else {
-      next = current.filter((x) => x !== t);
-    }
-
-    // Optimistic checkbox update immediately
-    setSelection(next);
-
-    // Uncheck: immediate map update, and ignore any in-flight loads (rebuild uses current selection)
-    if (!nextChecked) {
-      rebuildAxisLayer(next);
-      return;
-    }
-
-    // Check: show overlay while fetching if needed, then rebuild from current selection
-    const cache = axisGeoJsonCacheRef.current;
-    if (cache.has(t)) {
-      rebuildAxisLayer(displayAxisTypesRef.current);
-      return;
-    }
-
-    addPending(t);
-
-    try {
-      await ensureAxisTypeLoaded(t);
-    } catch (err) {
-      // Roll back only this type
-      setSelection(displayAxisTypesRef.current.filter((x) => x !== t));
-      showToast("bad", err && err.message ? err.message : "Failed to load road type layer");
-    } finally {
-      removePending(t);
-      rebuildAxisLayer(displayAxisTypesRef.current);
-    }
-  }
-
-  async function hideAllRoadTypes() {
-    setSelection([]);
-    setAxisTypeGeoJson(null);
-  }
-
-  async function refreshRoadTypes() {
-    addPending("refresh");
-
-    try {
-      const valid = await apiGet("/validAxisTypes");
-      const raw = Array.isArray(valid) ? valid.map(normaliseTypeName) : [];
-      const ordered = sortRoadTypesByImportance(raw);
-      setValidAxisTypes(ordered);
-
-      // Preserve current selection if possible (drop invalid ones only)
-      const current = displayAxisTypesRef.current;
-      const cleaned = current.filter((t) => ordered.includes(t));
-
-      if (cleaned.length > 0) {
-        await applySelection(cleaned);
-        return;
-      }
-
-      // First time / nothing selected: use mode defaults
-      const defaults = getModeDisplayDefaults(mode, ordered);
-      await applySelection(defaults);
-    } catch (err) {
-      showToast("bad", err && err.message ? err.message : "Failed to load road types");
-    } finally {
-      removePending("refresh");
-    }
-  }
-
-  async function applyModeDefaults(nextMode) {
-    const types = normaliseRoadTypesForMode(nextMode);
-
-    setBusy(true);
-    try {
-      const updated = await apiPost("/changeValidRoadTypes", types);
-      const raw = Array.isArray(updated) ? updated.map(normaliseTypeName) : types.map(normaliseTypeName);
-      const ordered = sortRoadTypesByImportance(raw);
-
-      setValidAxisTypes(ordered);
-
-      // Keep only valid selections; if none, fall back to mode defaults
-      const current = displayAxisTypesRef.current;
-      const cleaned = current.filter((t) => ordered.includes(t));
-
-      if (cleaned.length > 0) {
-        await applySelection(cleaned);
-      } else {
-        const defaults = getModeDisplayDefaults(nextMode, ordered);
-        await applySelection(defaults);
-      }
-    } catch (err) {
-      showToast(
-        "warn",
-        `Travel mode ${String(nextMode).toUpperCase()} selected. Server update may be unsupported for now.`
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onModeChange(nextMode) {
-    setMode(nextMode);
-    await applyModeDefaults(nextMode);
-  }
-
-  // -------------------- Blockages --------------------
-  const [blockageGeoJson, setBlockageGeoJson] = useState(null);
-  const [newBlockage, setNewBlockage] = useState({
-    lat: "",
-    long: "",
-    radius: 200,
-    name: "",
-    description: "",
-  });
-
-  // -------------------- Busy + toasts --------------------
-  const [busy, setBusy] = useState(false);
-  const [toasts, setToasts] = useState([]); // [{ id, tone, text }]
-
-  function showToast(tone, text) {
-    const id =
-      typeof crypto !== "undefined" && crypto.randomUUID
-        ? crypto.randomUUID()
-        : String(Date.now() + Math.random());
-
-    setToasts((prev) => {
-      const next = Array.isArray(prev) ? prev.slice() : [];
-      next.push({ id, tone, text });
-      return next;
-    });
-
-    window.setTimeout(() => {
-      setToasts((prev) => {
-        const arr = Array.isArray(prev) ? prev : [];
-        return arr.filter((t) => t.id !== id);
-      });
-    }, 3000);
-  }
-
-  // -------------------- Server polling (fixes pollUntilReady error) --------------------
   async function checkReadyOnce() {
     try {
       const result = await apiGet("/ready");
       const text = String(result).trim().toLowerCase();
-
       if (text === "ready") {
         setServerStatus("ready");
         setServerError("");
         return "ready";
       }
-
       if (text === "wait") {
         setServerStatus("wait");
         setServerError("");
         return "wait";
       }
-
       setServerStatus("unknown");
       setServerError(`Unexpected response: ${String(result)}`);
       return "unknown";
     } catch (err) {
       setServerStatus("error");
-      setServerError(err && err.message ? err.message : "Failed to reach server");
+      setServerError(err.message || "Failed to reach server");
       return "error";
     }
   }
 
   async function pollUntilReady() {
     window.clearInterval(pollTimer.current);
-
     const first = await checkReadyOnce();
-    if (first === "ready") {
-      return;
-    }
+    if (first === "ready") return;
 
     pollTimer.current = window.setInterval(async () => {
       const status = await checkReadyOnce();
@@ -492,7 +79,327 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // -------------------- API actions --------------------
+  // -------------------- UI state --------------------
+  const [tab, setTab] = useState(TAB_ROUTE);
+
+  // Map selection mode: "start" | "end" | "blockage" | null
+  const [selectionMode, setSelectionMode] = useState(null);
+
+  // Base map style only (must not refresh anything else)
+  const [mapStyle, setMapStyle] = useState("default");
+
+  // Transport mode removed per request: keep default only
+  const mode = "driving";
+
+  // Points
+  const [start, setStart] = useState({
+    lat: "",
+    long: "",
+    description: "Start",
+  });
+
+  const [end, setEnd] = useState({
+    lat: "",
+    long: "",
+    description: "End",
+  });
+
+  const startPoint = useMemo(() => {
+    const lat = toNumber(start.lat);
+    const long = toNumber(start.long);
+    if (lat === null || long === null) return null;
+    return { lat, long };
+  }, [start.lat, start.long]);
+
+  const endPoint = useMemo(() => {
+    const lat = toNumber(end.lat);
+    const long = toNumber(end.long);
+    if (lat === null || long === null) return null;
+    return { lat, long };
+  }, [end.lat, end.long]);
+
+  const [routeGeoJson, setRouteGeoJson] = useState(null);
+
+  // -------------------- Road types --------------------
+  const [validAxisTypes, setValidAxisTypes] = useState([]);
+  const [displayAxisTypes, setDisplayAxisTypes] = useState([]);
+  const [axisTypeGeoJson, setAxisTypeGeoJson] = useState(null);
+
+  const axisGeoJsonCacheRef = useRef(new Map()); // axisType -> geojson
+  const displayAxisTypesRef = useRef([]);
+  useEffect(() => {
+    displayAxisTypesRef.current = displayAxisTypes;
+  }, [displayAxisTypes]);
+
+  // Pending set controls the full-screen overlay (road-types only)
+  const pendingSetRef = useRef(new Set());
+  const [pendingAxisTypes, setPendingAxisTypes] = useState([]);
+
+  function syncPendingState() {
+    setPendingAxisTypes(Array.from(pendingSetRef.current));
+  }
+  function addPending(type) {
+    pendingSetRef.current.add(type);
+    syncPendingState();
+  }
+  function removePending(type) {
+    pendingSetRef.current.delete(type);
+    syncPendingState();
+  }
+  const roadLayerLoading = pendingAxisTypes.length > 0;
+
+  async function ensureAxisTypeLoaded(axisType) {
+    const typeName = normaliseTypeName(axisType);
+    if (!typeName) return null;
+
+    const cache = axisGeoJsonCacheRef.current;
+    if (cache.has(typeName)) return cache.get(typeName);
+
+    const gj = await apiGet(`/axisType/${encodeURIComponent(typeName)}`);
+
+    // Tag every feature so MapView can style + tooltip properly.
+    if (gj && typeof gj === "object" && Array.isArray(gj.features)) {
+      for (let i = 0; i < gj.features.length; i += 1) {
+        const f = gj.features[i];
+        if (!f || typeof f !== "object") continue;
+        if (!f.properties || typeof f.properties !== "object") {
+          f.properties = {};
+        }
+        f.properties.__axisType = typeName;
+      }
+    }
+
+    cache.set(typeName, gj);
+    return gj;
+  }
+
+  function rebuildAxisLayer(selectedTypes) {
+    const cache = axisGeoJsonCacheRef.current;
+    const selected = Array.from(
+      new Set((selectedTypes || []).map(normaliseTypeName))
+    ).filter(Boolean);
+
+    if (selected.length === 0) {
+      setAxisTypeGeoJson(null);
+      return;
+    }
+
+    const features = [];
+    for (let i = 0; i < selected.length; i += 1) {
+      const t = selected[i];
+      const gj = cache.get(t);
+      if (gj && Array.isArray(gj.features)) {
+        features.push(...gj.features);
+      }
+    }
+
+    setAxisTypeGeoJson({
+      type: "FeatureCollection",
+      features,
+    });
+  }
+
+  // Keep map overlay consistent with the *actual* selection even when tab changes
+  useEffect(() => {
+    rebuildAxisLayer(displayAxisTypes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayAxisTypes]);
+
+  async function refreshRoadTypes() {
+    addPending("refresh");
+    try {
+      const valid = await apiGet("/validAxisTypes");
+      const raw = Array.isArray(valid) ? valid.map(normaliseTypeName) : [];
+      const ordered = sortRoadTypesByImportance(raw);
+      setValidAxisTypes(ordered);
+
+      // Preserve selection; drop invalid only
+      const current = displayAxisTypesRef.current;
+      const cleaned = current.filter((t) => ordered.includes(t));
+
+      if (cleaned.length > 0) {
+        setDisplayAxisTypes(cleaned);
+        return;
+      }
+
+      // First-time: select all
+      await selectAllRoadTypes(ordered);
+    } catch (err) {
+      showToast("bad", err.message || "Failed to load road types");
+    } finally {
+      removePending("refresh");
+    }
+  }
+
+  async function selectAllRoadTypes(validListOverride) {
+    const list = Array.isArray(validListOverride)
+      ? validListOverride.slice()
+      : sortRoadTypesByImportance(validAxisTypes);
+
+    const all = Array.from(new Set(list.map(normaliseTypeName))).filter(
+      Boolean
+    );
+
+    if (all.length === 0) {
+      setDisplayAxisTypes([]);
+      setAxisTypeGeoJson(null);
+      return;
+    }
+
+    setDisplayAxisTypes(all);
+
+    for (let i = 0; i < all.length; i += 1) {
+      addPending(all[i]);
+    }
+
+    try {
+      await Promise.all(
+        all.map(async (t) => {
+          try {
+            await ensureAxisTypeLoaded(t);
+          } finally {
+            removePending(t);
+          }
+        })
+      );
+
+      // Use latest selection (handles user clicking while loading)
+      rebuildAxisLayer(displayAxisTypesRef.current);
+    } catch (err) {
+      showToast("bad", err.message || "Failed to load road type layer(s)");
+    } finally {
+      pendingSetRef.current.clear();
+      setPendingAxisTypes([]);
+    }
+  }
+
+  async function toggleRoadType(typeName, nextChecked) {
+    const type = normaliseTypeName(typeName);
+    if (!type) return;
+
+    // Optimistic checkbox update immediately
+    const current = displayAxisTypesRef.current;
+    const next = nextChecked
+      ? Array.from(new Set([...current, type]))
+      : current.filter((t) => t !== type);
+
+    setDisplayAxisTypes(next);
+
+    // Uncheck: immediate map update
+    if (!nextChecked) {
+      rebuildAxisLayer(next);
+      return;
+    }
+
+    // Check: show overlay while fetching
+    addPending(type);
+    try {
+      await ensureAxisTypeLoaded(type);
+      rebuildAxisLayer(displayAxisTypesRef.current);
+    } catch (err) {
+      // revert if fetch fails
+      setDisplayAxisTypes((prev) => prev.filter((t) => t !== type));
+      rebuildAxisLayer(displayAxisTypesRef.current);
+      showToast("bad", err.message || "Failed to load road type layer");
+    } finally {
+      removePending(type);
+    }
+  }
+
+  function hideAllRoadTypes() {
+    setDisplayAxisTypes([]);
+    setAxisTypeGeoJson(null);
+  }
+
+  // -------------------- Blockages --------------------
+  const [blockageGeoJson, setBlockageGeoJson] = useState(null);
+  const [newBlockage, setNewBlockage] = useState({
+    lat: "",
+    long: "",
+    radius: 200,
+    name: "",
+    description: "",
+  });
+
+  // -------------------- Toasts + busy --------------------
+  const [busy, setBusy] = useState(false);
+  const [toasts, setToasts] = useState([]); // [{ id, tone, text }]
+
+  function showToast(tone, text) {
+    const id =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : String(Date.now() + Math.random());
+
+    setToasts((prev) => [...prev, { id, tone, text }]);
+
+    window.setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 3000);
+  }
+
+  async function refreshBlockages() {
+    setBusy(true);
+    try {
+      const gj = await apiGet("/blockage");
+      setBlockageGeoJson(gj);
+    } catch (err) {
+      showToast("bad", err.message || "Failed to load blockages");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addBlockage() {
+    const lat = toNumber(newBlockage.lat);
+    const long = toNumber(newBlockage.long);
+    const radius = toNumber(newBlockage.radius);
+
+    if (lat === null || long === null || radius === null) {
+      showToast(
+        "warn",
+        "Blockage coordinates and radius must be valid numbers."
+      );
+      return;
+    }
+    if (!String(newBlockage.name || "").trim()) {
+      showToast("warn", "Blockage name is required.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const body = {
+        point: { long, lat },
+        radius,
+        name: String(newBlockage.name).trim(),
+        description: newBlockage.description || "",
+      };
+      await apiPost("/blockage", body);
+      showToast("good", "Blockage added.");
+      await refreshBlockages();
+    } catch (err) {
+      showToast("bad", err.message || "Failed to add blockage");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteBlockage(name) {
+    if (!name) return;
+    setBusy(true);
+    try {
+      await apiDelete(`/blockage/${encodeURIComponent(name)}`);
+      showToast("good", "Blockage deleted.");
+      await refreshBlockages();
+    } catch (err) {
+      showToast("bad", err.message || "Failed to delete blockage");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // -------------------- Route --------------------
   async function requestRoute() {
     if (!startPoint || !endPoint) {
       showToast("warn", "Start and End coordinates must be set.");
@@ -520,70 +427,7 @@ export default function App() {
       setRouteGeoJson(gj);
       showToast("good", "Route loaded.");
     } catch (err) {
-      showToast("bad", err && err.message ? err.message : "Failed to request route");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function refreshBlockages() {
-    setBusy(true);
-    try {
-      const gj = await apiGet("/blockage");
-      setBlockageGeoJson(gj);
-    } catch (err) {
-      showToast("bad", err && err.message ? err.message : "Failed to load blockages");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function addBlockage() {
-    const lat = toNumber(newBlockage.lat);
-    const long = toNumber(newBlockage.long);
-    const radius = toNumber(newBlockage.radius);
-
-    if (lat === null || long === null || radius === null) {
-      showToast("warn", "Blockage coordinates and radius must be valid numbers.");
-      return;
-    }
-
-    if (!String(newBlockage.name || "").trim()) {
-      showToast("warn", "Blockage name is required.");
-      return;
-    }
-
-    setBusy(true);
-    try {
-      const body = {
-        point: { long, lat },
-        radius,
-        name: String(newBlockage.name).trim(),
-        description: newBlockage.description || "",
-      };
-
-      await apiPost("/blockage", body);
-      showToast("good", "Blockage added.");
-      await refreshBlockages();
-    } catch (err) {
-      showToast("bad", err && err.message ? err.message : "Failed to add blockage");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function deleteBlockage(name) {
-    if (!name) {
-      return;
-    }
-
-    setBusy(true);
-    try {
-      await apiDelete(`/blockage/${encodeURIComponent(name)}`);
-      showToast("good", "Blockage deleted.");
-      await refreshBlockages();
-    } catch (err) {
-      showToast("bad", err && err.message ? err.message : "Failed to delete blockage");
+      showToast("bad", err.message || "Failed to request route");
     } finally {
       setBusy(false);
     }
@@ -591,48 +435,50 @@ export default function App() {
 
   function onPickPoint(point) {
     if (selectionMode === "start") {
-      setStart((prev) => {
-        return { ...prev, lat: String(point.lat), long: String(point.long) };
-      });
+      setStart((prev) => ({
+        ...prev,
+        lat: String(point.lat),
+        long: String(point.long),
+      }));
       setSelectionMode(null);
       showToast("good", "Start point set.");
       return;
     }
 
     if (selectionMode === "end") {
-      setEnd((prev) => {
-        return { ...prev, lat: String(point.lat), long: String(point.long) };
-      });
+      setEnd((prev) => ({
+        ...prev,
+        lat: String(point.lat),
+        long: String(point.long),
+      }));
       setSelectionMode(null);
       showToast("good", "End point set.");
       return;
     }
 
     if (selectionMode === "blockage") {
-      setNewBlockage((prev) => {
-        return { ...prev, lat: String(point.lat), long: String(point.long) };
-      });
+      setNewBlockage((prev) => ({
+        ...prev,
+        lat: String(point.lat),
+        long: String(point.long),
+      }));
       setSelectionMode(null);
       showToast("good", "Blockage point set.");
     }
   }
 
+  // -------------------- Badge --------------------
   const statusBadge = useMemo(() => {
-    if (serverStatus === "ready") {
-      return <Badge tone="good">Ready</Badge>;
-    }
-    if (serverStatus === "wait") {
-      return <Badge tone="warn">Warming up</Badge>;
-    }
-    if (serverStatus === "error") {
-      return <Badge tone="bad">Error</Badge>;
-    }
+    if (serverStatus === "ready") return <Badge tone="good">Ready</Badge>;
+    if (serverStatus === "wait") return <Badge tone="warn">Warming up</Badge>;
+    if (serverStatus === "error") return <Badge tone="bad">Error</Badge>;
     return <Badge tone="neutral">Unknown</Badge>;
   }, [serverStatus]);
 
   return (
     <div className="h-full w-full bg-slate-50">
       <div className="grid h-14 grid-cols-3 items-center border-b border-slate-200 bg-white px-4">
+        {/* Left */}
         <div className="flex items-center gap-1">
           {statusBadge}
 
@@ -651,15 +497,20 @@ export default function App() {
             />
           </button>
 
-          {serverError ? <div className="text-xs text-red-600">{serverError}</div> : null}
+          {serverError ? (
+            <div className="text-xs text-red-600">{serverError}</div>
+          ) : null}
         </div>
 
+        {/* Centre */}
         <div className="text-center">
-          <div className="text-lg font-semibold text-slate-900">SG Routing App</div>
+          <div className="text-lg font-semibold text-slate-900">
+            SG Routing App
+          </div>
         </div>
 
+        {/* Right */}
         <div className="flex items-center justify-end gap-2">
-          {/* IMPORTANT: this ONLY changes mapStyle state; MapView updates tile URL without refreshing overlays */}
           <Segmented
             value={mapStyle}
             onChange={setMapStyle}
@@ -683,6 +534,10 @@ export default function App() {
             onChange={async (v) => {
               setTab(v);
 
+              if (v !== TAB_ROAD_TYPES) {
+                setAxisTypeGeoJson(null);
+              }
+
               if (v === TAB_ROAD_TYPES && validAxisTypes.length === 0) {
                 await refreshRoadTypes();
               }
@@ -693,12 +548,9 @@ export default function App() {
             }}
           />
 
+          {/* -------------------- ROUTE TAB (no mode picker now) -------------------- */}
           {tab === TAB_ROUTE ? (
             <div className="mt-3 space-y-3">
-              <Field>
-                <ModePicker value={mode} onChange={onModeChange} />
-              </Field>
-
               <div className="rounded-xl border border-slate-200 bg-white p-3">
                 <div>
                   <div className="mb-2 mt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -708,11 +560,9 @@ export default function App() {
                   <FloatingInput
                     label="Longitude"
                     value={start.long}
-                    onChange={(e) => {
-                      setStart((p) => {
-                        return { ...p, long: e.target.value };
-                      });
-                    }}
+                    onChange={(e) =>
+                      setStart((p) => ({ ...p, long: e.target.value }))
+                    }
                     inputMode="decimal"
                   />
 
@@ -720,11 +570,9 @@ export default function App() {
                     <FloatingInput
                       label="Latitude"
                       value={start.lat}
-                      onChange={(e) => {
-                        setStart((p) => {
-                          return { ...p, lat: e.target.value };
-                        });
-                      }}
+                      onChange={(e) =>
+                        setStart((p) => ({ ...p, lat: e.target.value }))
+                      }
                       inputMode="decimal"
                     />
                   </div>
@@ -732,14 +580,11 @@ export default function App() {
                   <div className="mt-3 flex gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        setSelectionMode((prev) => {
-                          if (prev === "start") {
-                            return null;
-                          }
-                          return "start";
-                        });
-                      }}
+                      onClick={() =>
+                        setSelectionMode((prev) =>
+                          prev === "start" ? null : "start"
+                        )
+                      }
                       className={
                         "inline-flex items-center justify-center rounded-lg px-3 py-2 text-xs font-semibold transition " +
                         (selectionMode === "start"
@@ -752,11 +597,9 @@ export default function App() {
 
                     <button
                       type="button"
-                      onClick={() => {
-                        setStart((p) => {
-                          return { ...p, lat: "", long: "" };
-                        });
-                      }}
+                      onClick={() =>
+                        setStart((p) => ({ ...p, lat: "", long: "" }))
+                      }
                       className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 active:translate-y-[1px]"
                     >
                       Clear
@@ -774,11 +617,9 @@ export default function App() {
                   <FloatingInput
                     label="Longitude"
                     value={end.long}
-                    onChange={(e) => {
-                      setEnd((p) => {
-                        return { ...p, long: e.target.value };
-                      });
-                    }}
+                    onChange={(e) =>
+                      setEnd((p) => ({ ...p, long: e.target.value }))
+                    }
                     inputMode="decimal"
                   />
 
@@ -786,11 +627,9 @@ export default function App() {
                     <FloatingInput
                       label="Latitude"
                       value={end.lat}
-                      onChange={(e) => {
-                        setEnd((p) => {
-                          return { ...p, lat: e.target.value };
-                        });
-                      }}
+                      onChange={(e) =>
+                        setEnd((p) => ({ ...p, lat: e.target.value }))
+                      }
                       inputMode="decimal"
                     />
                   </div>
@@ -798,14 +637,11 @@ export default function App() {
                   <div className="mt-3 flex gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        setSelectionMode((prev) => {
-                          if (prev === "end") {
-                            return null;
-                          }
-                          return "end";
-                        });
-                      }}
+                      onClick={() =>
+                        setSelectionMode((prev) =>
+                          prev === "end" ? null : "end"
+                        )
+                      }
                       className={
                         "inline-flex items-center justify-center rounded-lg px-3 py-2 text-xs font-semibold transition " +
                         (selectionMode === "end"
@@ -818,11 +654,9 @@ export default function App() {
 
                     <button
                       type="button"
-                      onClick={() => {
-                        setEnd((p) => {
-                          return { ...p, lat: "", long: "" };
-                        });
-                      }}
+                      onClick={() =>
+                        setEnd((p) => ({ ...p, lat: "", long: "" }))
+                      }
                       className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 active:translate-y-[1px]"
                     >
                       Clear
@@ -840,12 +674,9 @@ export default function App() {
                 >
                   Search Route
                 </button>
-
                 <button
                   type="button"
-                  onClick={() => {
-                    setRouteGeoJson(null);
-                  }}
+                  onClick={() => setRouteGeoJson(null)}
                   className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100"
                 >
                   Clear Route
@@ -854,6 +685,7 @@ export default function App() {
             </div>
           ) : null}
 
+          {/* -------------------- ROAD TYPES TAB -------------------- */}
           {tab === TAB_ROAD_TYPES ? (
             <RoadTypesPanel
               options={validAxisTypes}
@@ -862,14 +694,17 @@ export default function App() {
               onRefresh={refreshRoadTypes}
               onToggle={toggleRoadType}
               onHideAll={hideAllRoadTypes}
-              onSelectAll={selectAllRoadTypes}
+              onSelectAll={() => selectAllRoadTypes()}
             />
           ) : null}
 
+          {/* -------------------- BLOCKAGES TAB -------------------- */}
           {tab === TAB_BLOCKAGES ? (
             <div className="mt-3 space-y-3">
               <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold text-slate-900">Blockages</div>
+                <div className="text-sm font-semibold text-slate-900">
+                  Blockages
+                </div>
                 <button
                   type="button"
                   onClick={refreshBlockages}
@@ -881,28 +716,26 @@ export default function App() {
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white p-3">
-                <div className="text-xs font-semibold text-slate-700">Add blockage</div>
+                <div className="text-xs font-semibold text-slate-700">
+                  Add blockage
+                </div>
 
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <input
                     className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
                     placeholder="lat"
                     value={newBlockage.lat}
-                    onChange={(e) => {
-                      setNewBlockage((p) => {
-                        return { ...p, lat: e.target.value };
-                      });
-                    }}
+                    onChange={(e) =>
+                      setNewBlockage((p) => ({ ...p, lat: e.target.value }))
+                    }
                   />
                   <input
                     className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
                     placeholder="long"
                     value={newBlockage.long}
-                    onChange={(e) => {
-                      setNewBlockage((p) => {
-                        return { ...p, long: e.target.value };
-                      });
-                    }}
+                    onChange={(e) =>
+                      setNewBlockage((p) => ({ ...p, long: e.target.value }))
+                    }
                   />
                 </div>
 
@@ -911,21 +744,17 @@ export default function App() {
                     className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
                     placeholder="radius (m)"
                     value={newBlockage.radius}
-                    onChange={(e) => {
-                      setNewBlockage((p) => {
-                        return { ...p, radius: e.target.value };
-                      });
-                    }}
+                    onChange={(e) =>
+                      setNewBlockage((p) => ({ ...p, radius: e.target.value }))
+                    }
                   />
                   <input
                     className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
                     placeholder="name"
                     value={newBlockage.name}
-                    onChange={(e) => {
-                      setNewBlockage((p) => {
-                        return { ...p, name: e.target.value };
-                      });
-                    }}
+                    onChange={(e) =>
+                      setNewBlockage((p) => ({ ...p, name: e.target.value }))
+                    }
                   />
                 </div>
 
@@ -934,24 +763,22 @@ export default function App() {
                   placeholder="description (optional)"
                   rows={2}
                   value={newBlockage.description}
-                  onChange={(e) => {
-                    setNewBlockage((p) => {
-                      return { ...p, description: e.target.value };
-                    });
-                  }}
+                  onChange={(e) =>
+                    setNewBlockage((p) => ({
+                      ...p,
+                      description: e.target.value,
+                    }))
+                  }
                 />
 
                 <div className="mt-2 flex gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      setSelectionMode("blockage");
-                    }}
+                    onClick={() => setSelectionMode("blockage")}
                     className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs hover:bg-slate-100"
                   >
                     Pick point
                   </button>
-
                   <button
                     type="button"
                     onClick={addBlockage}
@@ -964,9 +791,14 @@ export default function App() {
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white p-3">
-                <div className="text-xs font-semibold text-slate-700">Existing</div>
+                <div className="text-xs font-semibold text-slate-700">
+                  Existing
+                </div>
                 <div className="mt-2 max-h-60 overflow-auto">
-                  <BlockageList geojson={blockageGeoJson} onDelete={deleteBlockage} />
+                  <BlockageList
+                    geojson={blockageGeoJson}
+                    onDelete={deleteBlockage}
+                  />
                 </div>
               </div>
             </div>
@@ -981,7 +813,7 @@ export default function App() {
             startPoint={startPoint}
             endPoint={endPoint}
             routeGeoJson={routeGeoJson}
-            axisTypeGeoJson={axisTypeGeoJson}
+            axisTypeGeoJson={tab === TAB_ROAD_TYPES ? axisTypeGeoJson : null}
             blockageGeoJson={blockageGeoJson}
           />
         </div>
@@ -989,11 +821,15 @@ export default function App() {
 
       <ToastStack toasts={toasts} />
 
-      {/* Full-screen overlay for road-types loading (checkbox/select-all/refresh) */}
+      {/* Full-screen road layer overlay */}
       {roadLayerLoading ? (
         <LoadingOverlay
           title="Loading road type layer(s)…"
-          subtitle={pendingAxisTypes.length > 0 ? pendingAxisTypes.join(", ") : "Please wait"}
+          subtitle={
+            pendingAxisTypes.length > 0
+              ? pendingAxisTypes.join(", ")
+              : "Please wait"
+          }
         />
       ) : null}
     </div>
@@ -1001,7 +837,9 @@ export default function App() {
 }
 
 function BlockageList({ geojson, onDelete }) {
-  const features = Array.isArray(geojson && geojson.features) ? geojson.features : [];
+  const features = Array.isArray(geojson && geojson.features)
+    ? geojson.features
+    : [];
 
   if (features.length === 0) {
     return <div className="text-xs text-slate-500">No blockages loaded.</div>;
@@ -1010,26 +848,33 @@ function BlockageList({ geojson, onDelete }) {
   return (
     <div className="space-y-2">
       {features.map((f, idx) => {
-        const props = f && f.properties ? f.properties : {};
+        const props = f.properties || {};
         const name = props.name || props.id || String(idx);
         const desc = props.description || "";
         const radius = props.radius || props.r || "";
 
         return (
-          <div key={name} className="rounded-lg border border-slate-200 bg-white p-2">
+          <div
+            key={name}
+            className="rounded-lg border border-slate-200 bg-white p-2"
+          >
             <div className="flex items-start justify-between gap-2">
               <div>
-                <div className="text-sm font-semibold text-slate-900">{name}</div>
-                {desc ? <div className="text-xs text-slate-600">{desc}</div> : null}
+                <div className="text-sm font-semibold text-slate-900">
+                  {name}
+                </div>
+                {desc ? (
+                  <div className="text-xs text-slate-600">{desc}</div>
+                ) : null}
                 {radius ? (
-                  <div className="mt-1 text-[11px] text-slate-500">Radius: {radius} m</div>
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    Radius: {radius} m
+                  </div>
                 ) : null}
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  onDelete(name);
-                }}
+                onClick={() => onDelete(name)}
                 className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-100"
               >
                 Delete
