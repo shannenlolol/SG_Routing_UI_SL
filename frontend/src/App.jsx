@@ -841,14 +841,14 @@ export default function App() {
                 <div className="mt-2 space-y-2">
                   <input
                     className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-                    placeholder="lat"
+                    placeholder="Latitude"
                     value={newBlockage.lat}
                     onChange={(e) => setNewBlockage((p) => ({ ...p, lat: e.target.value }))}
                   />
 
                   <input
                     className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-                    placeholder="long"
+                    placeholder="Longitude"
                     value={newBlockage.long}
                     onChange={(e) => setNewBlockage((p) => ({ ...p, long: e.target.value }))}
                   />
@@ -874,14 +874,14 @@ export default function App() {
 
                   <input
                     className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-                    placeholder="name"
+                    placeholder="Name"
                     value={newBlockage.name}
                     onChange={(e) => setNewBlockage((p) => ({ ...p, name: e.target.value }))}
                   />
 
                   <textarea
                     className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-                    placeholder="description (optional)"
+                    placeholder="Description (optional)"
                     rows={2}
                     value={newBlockage.description}
                     onChange={(e) => setNewBlockage((p) => ({ ...p, description: e.target.value }))}
