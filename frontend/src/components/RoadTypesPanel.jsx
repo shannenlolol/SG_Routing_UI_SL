@@ -33,11 +33,11 @@ export default function RoadTypesPanel({
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-3">
-        <div className="text-xs text-slate-600">
+        {/* <div className="text-xs text-slate-600">
           Ordered by importance. Colour marker matches the map layer.
-        </div>
+        </div> */}
 
-        <div className="mt-3 max-h-72 overflow-auto rounded-lg border border-slate-200">
+        {/* <div className="mt-3 max-h-82 overflow-auto rounded-lg border border-slate-200"> */}
           {list.length === 0 ? (
             <div className="p-3 text-xs text-slate-500">No valid road types loaded.</div>
           ) : (
@@ -51,7 +51,7 @@ export default function RoadTypesPanel({
                   <label key={value} className="flex items-center gap-2 text-sm text-slate-800">
                     <input
                       type="checkbox"
-                      className="h-4 w-4"
+                      className="sg-checkbox"
                       checked={isChecked}
                       disabled={loading}
                       onChange={(e) => {
@@ -73,7 +73,7 @@ export default function RoadTypesPanel({
               })}
             </div>
           )}
-        </div>
+        {/* </div> */}
 
         <div className="mt-3 flex gap-2">
           <button
@@ -88,7 +88,7 @@ export default function RoadTypesPanel({
           <button
             type="button"
             onClick={onSelectAll}
-            className="rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs text-white hover:bg-slate-800 disabled:opacity-60"
+            className="rounded-lg bg-blue-400 px-2.5 py-1.5 text-xs text-white hover:bg-blue-600 disabled:opacity-60"
             disabled={loading}
           >
             Select all

@@ -47,15 +47,24 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
+function normaliseOptionalText(v) {
+  if (v === null || v === undefined) return "";
+  const s = String(v).trim();
+  if (!s) return "";
+  if (s.toLowerCase() === "null") return "";
+  if (s.toLowerCase() === "undefined") return "";
+  return s;
+}
+
 function makePinIcon(fill, label) {
   const svg = `
-    <svg width="34" height="42" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="display:block">
+    <svg width="34" height="60" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="display:block">
       <path d="M12 22s7-5.2 7-12a7 7 0 0 0-14 0c0 6.8 7 12 7 12z"
-        fill="${fill}" stroke="white" stroke-width="2"/>
-      <circle cx="12" cy="10" r="3.7" fill="white" fill-opacity="0.98"/>
+        fill="${fill}" stroke="${fill}" stroke-width="2"/>
+      <circle cx="12" cy="10" r="8" fill="white" stroke="${fill}" fill-opacity="0.98"/>
       <text x="12" y="11.7" text-anchor="middle" dominant-baseline="middle"
-        font-size="10.5" font-family="Arial" font-weight="800" fill="${fill}">
-
+        font-size="10.5" font-family="Calibri" font-weight="400" fill="${fill}">
+        ${label}
       </text>
     </svg>
   `;
@@ -69,11 +78,12 @@ function makePinIcon(fill, label) {
   });
 }
 
-// Colours matching your working react-leaflet version
-const ICON_START_SELECTED = makePinIcon("#ef4444", "S");
+const ICON_START_SELECTED = makePinIcon("#87CEEB", "S");
 const ICON_END_SELECTED = makePinIcon("#ef4444", "E");
 const ICON_START_NEAREST = makePinIcon("#0f172a", "S");
 const ICON_END_NEAREST = makePinIcon("#0f172a", "E");
+const ICON_BLOCKAGE_DRAFT = makePinIcon("#f97316", "B");
+const ICON_BLOCKAGE = makePinIcon("#f59e0b", "B");
 
 function pointTooltipHtml(title, pt) {
   const lat = pt ? getLat(pt) : null;
@@ -87,9 +97,9 @@ function pointTooltipHtml(title, pt) {
         title
       )}</div>
       <div style="display:grid; grid-template-columns:auto 1fr; gap:4px 10px;">
-        <div style="color:#64748b;">lat</div>
+        <div style="color:#64748b;">Latitude: </div>
         <div style="color:#0f172a; font-weight:700;">${escapeHtml(latText)}</div>
-        <div style="color:#64748b;">long</div>
+        <div style="color:#64748b;">Longitude: </div>
         <div style="color:#0f172a; font-weight:700;">${escapeHtml(lngText)}</div>
       </div>
     </div>
@@ -192,55 +202,84 @@ function computeBoundsFromGeoJson(geojson) {
   }
 
   if (!Number.isFinite(minLat)) return null;
-
   return L.latLngBounds([minLat, minLng], [maxLat, maxLng]);
 }
 
-function roadTooltipHtml(props) {
+function pickFirst(props, keys) {
+  for (let i = 0; i < keys.length; i += 1) {
+    const k = keys[i];
+    const v = props ? props[k] : undefined;
+    if (v !== undefined && v !== null && String(v).trim() !== "") return v;
+  }
+  return "";
+}
+
+function prettifyRoadType(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "—";
+
+  const spaced = s.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  return spaced
+    .split(" ")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function routeTooltipHtml(props) {
   const p = props && typeof props === "object" ? props : {};
-  const roadName =
-    p.road_name || p.roadName || p.name || p.ROAD_NAME || p.road || "";
 
-  const axisTypeRaw =
-    p.__axisType || p.axisType || p.road_type || p.roadType || "";
-  const axisType = String(axisTypeRaw || "").trim();
+  const roadName = pickFirst(p, [
+    "road name",
+    "road_name",
+    "roadName",
+    "name",
+    "ROAD_NAME",
+    "road",
+  ]);
 
-  const meta =
-    ROAD_TYPE_META_BY_VALUE[String(axisType || "").trim()] ||
-    ROAD_TYPE_META_BY_VALUE[normaliseTypeName(axisType)];
+  const roadTypeRaw = pickFirst(p, [
+    "road type",
+    "road_type",
+    "roadType",
+    "highway",
+    "type",
+    "ROAD_TYPE",
+  ]);
 
-  const typeLabel =
-    (meta && (meta.label || meta.name)) || (axisType ? String(axisType) : "");
-
-  const safeName = roadName ? String(roadName) : "—";
-  const safeType = typeLabel ? String(typeLabel) : "—";
+  const roadType = prettifyRoadType(roadTypeRaw);
 
   return `
     <div style="font-size:12px; line-height:1.25; padding:2px 2px;">
       <div style="display:grid; grid-template-columns:auto 1fr; gap:6px 10px;">
-        <div style="color:#64748b;">road name</div>
-        <div style="font-weight:700; color:#0f172a;">${escapeHtml(safeName)}</div>
-        <div style="color:#64748b;">road type</div>
-        <div style="font-weight:700; color:#0f172a;">${escapeHtml(safeType)}</div>
+        <div style="color:#64748b;">Road Name:</div>
+        <div style="font-weight:700; color:#0f172a;">${escapeHtml(roadName || "—")}</div>
+        <div style="color:#64748b;">Road Type:</div>
+        <div style="font-weight:700; color:#0f172a;">${escapeHtml(roadType)}</div>
       </div>
     </div>
   `;
 }
 
-function routeTooltipHtml(props) {
-  const p = props && typeof props === "object" ? props : {};
-  const roadName =
-    p.road_name || p.roadName || p.name || p.ROAD_NAME || p.road || "";
-  if (!roadName) return null;
+function getBlockageRadius(feature) {
+  const props = feature && feature.properties ? feature.properties : {};
+  const candidates = [
+    props.radius,
+    props.r,
+    props.R,
+    props["radius (m)"],
+    props.radius_m,
+    props.radiusM,
+    feature && feature.radius,
+    feature && feature.r,
+  ];
 
-  return `
-    <div style="font-size:12px; line-height:1.25; padding:2px 2px;">
-      <div style="color:#64748b;">route segment</div>
-      <div style="font-weight:700; color:#0f172a;">${escapeHtml(
-        String(roadName)
-      )}</div>
-    </div>
-  `;
+  for (let i = 0; i < candidates.length; i += 1) {
+    const n = Number(candidates[i]);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+
+  return null;
 }
 
 export default function MapView({
@@ -252,6 +291,8 @@ export default function MapView({
   routeGeoJson,
   axisTypeGeoJson,
   blockageGeoJson,
+  draftBlockage,
+  focusTarget,
 }) {
   const mapDivRef = useRef(null);
   const mapRef = useRef(null);
@@ -259,7 +300,10 @@ export default function MapView({
 
   const routeLayerRef = useRef(null);
   const roadLayerRef = useRef(null);
-  const blockageLayerRef = useRef(null);
+
+  const existingBlockagesRef = useRef(null);
+  const draftBlockageMarkerRef = useRef(null);
+  const draftBlockageCircleRef = useRef(null);
 
   const startMarkerRef = useRef(null);
   const endMarkerRef = useRef(null);
@@ -282,7 +326,6 @@ export default function MapView({
   }, [mapStyle]);
 
   const routeBounds = useMemo(() => computeBoundsFromGeoJson(routeGeoJson), [routeGeoJson]);
-
   const snapLine = useMemo(() => buildSnapLine(routeGeoJson), [routeGeoJson]);
 
   const nearestPoints = useMemo(() => {
@@ -292,25 +335,19 @@ export default function MapView({
     if (startPoint) {
       const selected = turf.point([startPoint.long, startPoint.lat]);
       const nearest = turf.nearestPointOnLine(snapLine, selected);
-      out.start = {
-        long: nearest.geometry.coordinates[0],
-        lat: nearest.geometry.coordinates[1],
-      };
+      out.start = { long: nearest.geometry.coordinates[0], lat: nearest.geometry.coordinates[1] };
     }
 
     if (endPoint) {
       const selected = turf.point([endPoint.long, endPoint.lat]);
       const nearest = turf.nearestPointOnLine(snapLine, selected);
-      out.end = {
-        long: nearest.geometry.coordinates[0],
-        lat: nearest.geometry.coordinates[1],
-      };
+      out.end = { long: nearest.geometry.coordinates[0], lat: nearest.geometry.coordinates[1] };
     }
 
     return out;
   }, [snapLine, startPoint, endPoint]);
 
-  // INIT MAP ONCE (StrictMode-safe)
+  // INIT MAP ONCE
   useEffect(() => {
     const container = mapDivRef.current;
     if (!container) return;
@@ -368,7 +405,10 @@ export default function MapView({
 
       routeLayerRef.current = null;
       roadLayerRef.current = null;
-      blockageLayerRef.current = null;
+
+      existingBlockagesRef.current = null;
+      draftBlockageMarkerRef.current = null;
+      draftBlockageCircleRef.current = null;
 
       startMarkerRef.current = null;
       endMarkerRef.current = null;
@@ -378,7 +418,7 @@ export default function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Update basemap URL only (no recreate)
+  // Update basemap URL only
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !tileLayerRef.current) return;
@@ -400,7 +440,27 @@ export default function MapView({
     map.fitBounds(routeBounds, { padding: [24, 24] });
   }, [routeBounds]);
 
-  // Selected start marker (red) + tooltip
+  // Focus to blockage selected from list
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!focusTarget) return;
+
+    const lat = Number(focusTarget.lat);
+    const lng = Number(focusTarget.long);
+    const zoom = Number(focusTarget.zoom);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    if (Number.isFinite(zoom)) {
+      map.setView([lat, lng], zoom, { animate: true });
+      return;
+    }
+
+    map.setView([lat, lng], map.getZoom(), { animate: true });
+  }, [focusTarget]);
+
+  // Selected start marker
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -434,7 +494,7 @@ export default function MapView({
     startMarkerRef.current = marker;
   }, [startPoint]);
 
-  // Selected end marker (red) + tooltip
+  // Selected end marker
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -468,7 +528,7 @@ export default function MapView({
     endMarkerRef.current = marker;
   }, [endPoint]);
 
-  // Nearest start (black) + tooltip
+  // Nearest start
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -490,23 +550,20 @@ export default function MapView({
       zIndexOffset: 900,
     });
 
-    marker.bindTooltip(
-      pointTooltipHtml("Nearest Start on Route", { lat, long: lng }),
-      {
-        permanent: false,
-        sticky: true,
-        opacity: 0.98,
-        direction: "top",
-        offset: [0, -18],
-        className: "sg-tooltip",
-      }
-    );
+    marker.bindTooltip(pointTooltipHtml("Nearest Start on Route", { lat, long: lng }), {
+      permanent: false,
+      sticky: true,
+      opacity: 0.98,
+      direction: "top",
+      offset: [0, -18],
+      className: "sg-tooltip",
+    });
 
     marker.addTo(map);
     nearestStartMarkerRef.current = marker;
   }, [nearestPoints]);
 
-  // Nearest end (black) + tooltip
+  // Nearest end
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -528,21 +585,161 @@ export default function MapView({
       zIndexOffset: 900,
     });
 
-    marker.bindTooltip(
-      pointTooltipHtml("Nearest End on Route", { lat, long: lng }),
-      {
-        permanent: false,
-        sticky: true,
-        opacity: 0.98,
-        direction: "top",
-        offset: [0, -18],
-        className: "sg-tooltip",
-      }
-    );
+    marker.bindTooltip(pointTooltipHtml("Nearest End on Route", { lat, long: lng }), {
+      permanent: false,
+      sticky: true,
+      opacity: 0.98,
+      direction: "top",
+      offset: [0, -18],
+      className: "sg-tooltip",
+    });
 
     marker.addTo(map);
     nearestEndMarkerRef.current = marker;
   }, [nearestPoints]);
+
+  // EXISTING BLOCKAGES: markers + filled circles (radius + desc normalised)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (existingBlockagesRef.current) {
+      map.removeLayer(existingBlockagesRef.current);
+      existingBlockagesRef.current = null;
+    }
+
+    const feats = safeFeatures(blockageGeoJson);
+    if (feats.length === 0) return;
+
+    const group = L.layerGroup([], { pane: "blockages" });
+
+    for (let i = 0; i < feats.length; i += 1) {
+      const f = feats[i];
+      const geom = f && f.geometry ? f.geometry : null;
+      const props = f && f.properties ? f.properties : {};
+
+      if (!geom || geom.type !== "Point" || !Array.isArray(geom.coordinates)) continue;
+
+      const lng = Number(geom.coordinates[0]);
+      const lat = Number(geom.coordinates[1]);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+
+      const radius = getBlockageRadius(f);
+      const name = String(props.name || props.id || "").trim();
+      const desc = normaliseOptionalText(props.description);
+
+      if (radius !== null) {
+        const circle = L.circle([lat, lng], {
+          pane: "blockages",
+          radius,
+          color: "#2563eb",
+          weight: 2,
+          opacity: 0.95,
+          fillColor: "#2563eb",
+          fillOpacity: 0.15,
+        });
+        group.addLayer(circle);
+      }
+
+      const marker = L.marker([lat, lng], {
+        pane: "markers",
+        icon: ICON_BLOCKAGE,
+        keyboard: false,
+        zIndexOffset: 950,
+      });
+
+      const tip = `
+        <div style="font-size:12px; line-height:1.25; padding:2px 2px;">
+          <div style="font-weight:800; color:#0f172a; margin-bottom:4px;">Blockage</div>
+          <div style="display:grid; grid-template-columns:auto 1fr; gap:4px 10px;">
+            <div style="color:#64748b;">name</div>
+            <div style="color:#0f172a; font-weight:700;">${escapeHtml(name || "—")}</div>
+            <div style="color:#64748b;">radius</div>
+            <div style="color:#0f172a; font-weight:700;">${escapeHtml(
+              radius !== null ? `${radius} m` : "—"
+            )}</div>
+            ${
+              desc
+                ? `<div style="color:#64748b;">desc</div><div style="color:#0f172a; font-weight:700;">${escapeHtml(desc)}</div>`
+                : ""
+            }
+          </div>
+        </div>
+      `;
+
+      marker.bindTooltip(tip, {
+        sticky: true,
+        opacity: 0.95,
+        direction: "top",
+        className: "sg-tooltip",
+        offset: [0, -14],
+      });
+
+      group.addLayer(marker);
+    }
+
+    group.addTo(map);
+    existingBlockagesRef.current = group;
+  }, [blockageGeoJson]);
+
+  // DRAFT BLOCKAGE: orange marker + dotted radius
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (draftBlockageMarkerRef.current) {
+      map.removeLayer(draftBlockageMarkerRef.current);
+      draftBlockageMarkerRef.current = null;
+    }
+    if (draftBlockageCircleRef.current) {
+      map.removeLayer(draftBlockageCircleRef.current);
+      draftBlockageCircleRef.current = null;
+    }
+
+    if (!draftBlockage || !draftBlockage.point) return;
+
+    const lat = getLat(draftBlockage.point);
+    const lng = getLng(draftBlockage.point);
+    const radius = Number(draftBlockage.radius);
+
+    if (lat === null || lng === null) return;
+
+    const marker = L.marker([lat, lng], {
+      pane: "markers",
+      icon: ICON_BLOCKAGE_DRAFT,
+      keyboard: false,
+      zIndexOffset: 980,
+    });
+
+    marker.bindTooltip(pointTooltipHtml("Draft Blockage", { lat, long: lng }), {
+      permanent: false,
+      sticky: true,
+      opacity: 0.98,
+      direction: "top",
+      offset: [0, -18],
+      className: "sg-tooltip",
+    });
+
+    marker.addTo(map);
+    draftBlockageMarkerRef.current = marker;
+
+    if (Number.isFinite(radius) && radius > 0) {
+      const circle = L.circle([lat, lng], {
+        pane: "blockages",
+        radius,
+        color: "#2563eb",
+        weight: 2,
+        opacity: 0.95,
+        fillColor: "#2563eb",
+        fillOpacity: 0.08,
+        dashArray: "2 8",
+        lineCap: "round",
+      });
+
+      circle.addTo(map);
+      draftBlockageCircleRef.current = circle;
+    }
+  }, [draftBlockage]);
 
   // Route layer
   useEffect(() => {
@@ -563,7 +760,6 @@ export default function MapView({
         return { color: "#2563eb", weight: 5, opacity: 0.9 };
       },
       pointToLayer: function pointToLayer(_feature, latlng) {
-        // Hide route point features (prevents default Leaflet marker/shadows)
         return L.circleMarker(latlng, { radius: 0, opacity: 0, fillOpacity: 0 });
       },
       onEachFeature: function onEachFeature(feature, l) {
@@ -584,7 +780,7 @@ export default function MapView({
     routeLayerRef.current = layer;
   }, [routeGeoJson]);
 
-  // Road-types overlay
+  // Road-types overlay (keep visible across tab changes)
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -602,20 +798,14 @@ export default function MapView({
       style: function style(feature) {
         const props = feature && feature.properties ? feature.properties : {};
         const t = String(props.__axisType || "");
-        const meta =
-          ROAD_TYPE_META_BY_VALUE[t] ||
-          ROAD_TYPE_META_BY_VALUE[normaliseTypeName(t)];
+        const meta = ROAD_TYPE_META_BY_VALUE[t] || ROAD_TYPE_META_BY_VALUE[normaliseTypeName(t)];
         const colour = meta && meta.colour ? meta.colour : "#64748b";
 
-        return {
-          color: colour,
-          weight: 3,
-          opacity: 0.95,
-        };
+        return { color: colour, weight: 3, opacity: 0.95 };
       },
       onEachFeature: function onEachFeature(feature, l) {
         const props = feature && feature.properties ? feature.properties : {};
-        const html = roadTooltipHtml(props);
+        const html = routeTooltipHtml(props);
 
         l.bindTooltip(html, {
           sticky: true,
@@ -630,42 +820,5 @@ export default function MapView({
     roadLayerRef.current = layer;
   }, [axisTypeGeoJson]);
 
-  // Blockages overlay
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    if (blockageLayerRef.current) {
-      map.removeLayer(blockageLayerRef.current);
-      blockageLayerRef.current = null;
-    }
-
-    const feats = safeFeatures(blockageGeoJson);
-    if (feats.length === 0) return;
-
-    const layer = L.geoJSON(blockageGeoJson, {
-      pane: "blockages",
-      style: function style() {
-        return { color: "#ef4444", weight: 2, opacity: 0.9 };
-      },
-      onEachFeature: function onEachFeature(feature, l) {
-        const props = feature && feature.properties ? feature.properties : {};
-        const name = props.name || props.id || "";
-        if (!name) return;
-
-        l.bindTooltip(`Blockage: ${escapeHtml(String(name))}`, {
-          sticky: true,
-          opacity: 0.95,
-          direction: "top",
-          className: "sg-tooltip",
-        });
-      },
-    });
-
-    layer.addTo(map);
-    blockageLayerRef.current = layer;
-  }, [blockageGeoJson]);
-
   return <div ref={mapDivRef} className="h-full w-full" />;
 }
-  

@@ -21,3 +21,17 @@ html, body, #root {
 .road-tooltip.leaflet-tooltip-right:before {
   border: none;
 }
+
+/* White box + black check */
+.sg-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: #eaeaea; /* checked colour (tick + fill on most browsers) */
+  border-color: #000000;
+}
+
+/* Ensure white background even when unchecked */
+.sg-checkbox:not(:checked) {
+    border-color: #000000;
+  background: #ffffff;
+}
