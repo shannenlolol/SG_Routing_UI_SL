@@ -271,13 +271,28 @@ function routeTooltipHtml(props) {
 
 function getBlockageRadius(feature) {
   const props = feature && feature.properties ? feature.properties : {};
+
+  // BACKEND RETURNS THIS (from your Postman screenshot):
+  // props["distance (meters)"] : 1380
   const candidates = [
+    // UI-first keys
     props.radius,
     props.r,
     props.R,
     props["radius (m)"],
     props.radius_m,
     props.radiusM,
+
+    // backend variants (support a few spellings)
+    props["distance (meters)"],
+    props["distance(meters)"],
+    props["distance_meters"],
+    props.distance_meters,
+    props.distance,
+    props.distance_m,
+    props.distanceM,
+
+    // fallback on feature root
     feature && feature.radius,
     feature && feature.r,
   ];
@@ -333,7 +348,10 @@ export default function MapView({
     return TILE[k];
   }, [mapStyle]);
 
-  const routeBounds = useMemo(() => computeBoundsFromGeoJson(routeGeoJson), [routeGeoJson]);
+  const routeBounds = useMemo(
+    () => computeBoundsFromGeoJson(routeGeoJson),
+    [routeGeoJson]
+  );
   const snapLine = useMemo(() => buildSnapLine(routeGeoJson), [routeGeoJson]);
 
   const nearestPoints = useMemo(() => {
@@ -343,13 +361,19 @@ export default function MapView({
     if (startPoint) {
       const selected = turf.point([startPoint.long, startPoint.lat]);
       const nearest = turf.nearestPointOnLine(snapLine, selected);
-      out.start = { long: nearest.geometry.coordinates[0], lat: nearest.geometry.coordinates[1] };
+      out.start = {
+        long: nearest.geometry.coordinates[0],
+        lat: nearest.geometry.coordinates[1],
+      };
     }
 
     if (endPoint) {
       const selected = turf.point([endPoint.long, endPoint.lat]);
       const nearest = turf.nearestPointOnLine(snapLine, selected);
-      out.end = { long: nearest.geometry.coordinates[0], lat: nearest.geometry.coordinates[1] };
+      out.end = {
+        long: nearest.geometry.coordinates[0],
+        lat: nearest.geometry.coordinates[1],
+      };
     }
 
     return out;
@@ -619,6 +643,18 @@ export default function MapView({
     const feats = safeFeatures(blockageGeoJson);
     if (feats.length === 0) return;
 
+    // debug: confirm what keys we received after refresh
+    const sample = feats[0];
+    const sampleProps = sample && sample.properties ? sample.properties : {};
+    console.log("[map:blockages] render", {
+      count: feats.length,
+      sampleName: sampleProps.name,
+      sampleRadiusResolved: getBlockageRadius(sample),
+      sampleKeys: Object.keys(sampleProps || {}).slice(0, 12),
+      sampleDistanceMeters: sampleProps["distance (meters)"],
+      sampleRadius: sampleProps.radius,
+    });
+
     const group = L.layerGroup([], { pane: "blockages" });
 
     for (let i = 0; i < feats.length; i += 1) {
@@ -626,7 +662,8 @@ export default function MapView({
       const geom = f && f.geometry ? f.geometry : null;
       const props = f && f.properties ? f.properties : {};
 
-      if (!geom || geom.type !== "Point" || !Array.isArray(geom.coordinates)) continue;
+      if (!geom || geom.type !== "Point" || !Array.isArray(geom.coordinates))
+        continue;
 
       const lng = Number(geom.coordinates[0]);
       const lat = Number(geom.coordinates[1]);
@@ -661,14 +698,18 @@ export default function MapView({
           <div style="font-weight:800; color:#0f172a; margin-bottom:4px;">Blockage</div>
           <div style="display:grid; grid-template-columns:auto 1fr; gap:4px 10px;">
             <div style="color:#64748b;">name</div>
-            <div style="color:#0f172a; font-weight:700;">${escapeHtml(name || "—")}</div>
+            <div style="color:#0f172a; font-weight:700;">${escapeHtml(
+              name || "—"
+            )}</div>
             <div style="color:#64748b;">radius</div>
             <div style="color:#0f172a; font-weight:700;">${escapeHtml(
               radius !== null ? `${radius} m` : "—"
             )}</div>
             ${
               desc
-                ? `<div style="color:#64748b;">desc</div><div style="color:#0f172a; font-weight:700;">${escapeHtml(desc)}</div>`
+                ? `<div style="color:#64748b;">desc</div><div style="color:#0f172a; font-weight:700;">${escapeHtml(
+                    desc
+                  )}</div>`
                 : ""
             }
           </div>

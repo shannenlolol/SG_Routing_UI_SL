@@ -35,9 +35,7 @@ function normaliseOptionalText(v) {
 }
 
 function normaliseBlockageName(name) {
-  return String(name || "")
-    .trim()
-    .toLowerCase();
+  return String(name || "").trim().toLowerCase();
 }
 
 function getBlockageNameFromFeature(feature, idx) {
@@ -53,8 +51,15 @@ function getBlockageKeyFromFeature(feature, idx) {
   return normaliseBlockageName(name);
 }
 
-function getBlockageRadiusFromFeature(feature) {
-  const props = feature && feature.properties ? feature.properties : {};
+/**
+ * Backend returns radius under keys like:
+ * - "distance (meters)" (seen in your Postman screenshot)
+ * - sometimes "distance", "distance_m", etc
+ * We normalise all of these into f.properties.radius.
+ */
+function readRadiusMetersFromProps(props) {
+  if (!props || typeof props !== "object") return null;
+
   const candidates = [
     props.radius,
     props.r,
@@ -62,14 +67,35 @@ function getBlockageRadiusFromFeature(feature) {
     props["radius (m)"],
     props.radius_m,
     props.radiusM,
-    feature && feature.radius,
-    feature && feature.r,
+
+    // backend key in your screenshot:
+    props["distance (meters)"],
+    props["distance(meters)"],
+    props["distance_meters"],
+    props.distance_meters,
+    props.distance,
+    props.distance_m,
+    props.distanceM,
   ];
 
   for (let i = 0; i < candidates.length; i += 1) {
     const n = Number(candidates[i]);
     if (Number.isFinite(n) && n > 0) return n;
   }
+  return null;
+}
+
+function getBlockageRadiusFromFeature(feature) {
+  const props = feature && feature.properties ? feature.properties : {};
+  const fromProps = readRadiusMetersFromProps(props);
+  if (fromProps !== null) return fromProps;
+
+  const extraCandidates = [feature && feature.radius, feature && feature.r];
+  for (let i = 0; i < extraCandidates.length; i += 1) {
+    const n = Number(extraCandidates[i]);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+
   return null;
 }
 
@@ -100,6 +126,12 @@ function removeBlockageFromGeoJsonByKey(gj, keyToRemove) {
   };
 }
 
+/**
+ * Ensure route payload always contains:
+ * - properties.radius as a number (meters)
+ * - properties.description as non-null string
+ * Also: if backend uses distance(meters), we convert to radius here too.
+ */
 function sanitiseBlockagesForRoute(gj) {
   if (!gj || gj.type !== "FeatureCollection" || !Array.isArray(gj.features)) {
     return null;
@@ -109,17 +141,17 @@ function sanitiseBlockagesForRoute(gj) {
     type: "FeatureCollection",
     features: gj.features.filter(Boolean).map((f) => {
       const props = (f && f.properties) || {};
-      const radiusRaw =
-        props.radius ?? props.r ?? props.R ?? props["radius (m)"] ?? 0;
-      const radiusNum = Number(radiusRaw);
+
+      const radiusNum = readRadiusMetersFromProps(props);
+      const radius =
+        Number.isFinite(radiusNum) && radiusNum > 0 ? radiusNum : 0;
 
       return {
         type: "Feature",
         geometry: f.geometry,
         properties: {
-          // keep name/desc etc
           ...props,
-          radius: Number.isFinite(radiusNum) && radiusNum > 0 ? radiusNum : 0,
+          radius: radius,
           description: normaliseOptionalText(props.description),
         },
       };
