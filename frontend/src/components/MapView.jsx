@@ -226,10 +226,17 @@ function prettifyRoadType(raw) {
     .join(" ");
 }
 
+function prettifyRoadName(raw) {
+  if (raw === "NULL"){
+    return "—";
+  }
+  return raw;
+}
+
 function routeTooltipHtml(props) {
   const p = props && typeof props === "object" ? props : {};
 
-  const roadName = pickFirst(p, [
+  const roadNameRaw = pickFirst(p, [
     "road name",
     "road_name",
     "roadName",
@@ -248,12 +255,13 @@ function routeTooltipHtml(props) {
   ]);
 
   const roadType = prettifyRoadType(roadTypeRaw);
+  const roadName = prettifyRoadName(roadNameRaw);
 
   return `
     <div style="font-size:12px; line-height:1.25; padding:2px 2px;">
       <div style="display:grid; grid-template-columns:auto 1fr; gap:6px 10px;">
         <div style="color:#64748b;">Road Name:</div>
-        <div style="font-weight:700; color:#0f172a;">${escapeHtml(roadName || "—")}</div>
+        <div style="font-weight:700; color:#0f172a;">${escapeHtml(roadName)}</div>
         <div style="color:#64748b;">Road Type:</div>
         <div style="font-weight:700; color:#0f172a;">${escapeHtml(roadType)}</div>
       </div>

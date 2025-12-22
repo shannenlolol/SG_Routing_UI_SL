@@ -34,12 +34,23 @@ function normaliseOptionalText(v) {
   return s;
 }
 
+function normaliseBlockageName(name) {
+  return String(name || "")
+    .trim()
+    .toLowerCase();
+}
+
 function getBlockageNameFromFeature(feature, idx) {
   const props = feature && feature.properties ? feature.properties : {};
   const raw = props.name || props.id || "";
   const s = String(raw || "").trim();
   if (s) return s;
   return String(idx);
+}
+
+function getBlockageKeyFromFeature(feature, idx) {
+  const name = getBlockageNameFromFeature(feature, idx);
+  return normaliseBlockageName(name);
 }
 
 function getBlockageRadiusFromFeature(feature) {
@@ -59,8 +70,61 @@ function getBlockageRadiusFromFeature(feature) {
     const n = Number(candidates[i]);
     if (Number.isFinite(n) && n > 0) return n;
   }
-
   return null;
+}
+
+function getBlockageNamesSet(gj) {
+  const feats = Array.isArray(gj && gj.features) ? gj.features : [];
+  const out = new Set();
+
+  for (let i = 0; i < feats.length; i += 1) {
+    const f = feats[i];
+    const props = (f && f.properties) || {};
+    const n = normaliseBlockageName(props.name || props.id || "");
+    if (n) out.add(n);
+  }
+
+  return out;
+}
+
+function removeBlockageFromGeoJsonByKey(gj, keyToRemove) {
+  if (!gj || gj.type !== "FeatureCollection" || !Array.isArray(gj.features)) {
+    return gj;
+  }
+
+  return {
+    ...gj,
+    features: gj.features.filter((f, idx) => {
+      return getBlockageKeyFromFeature(f, idx) !== keyToRemove;
+    }),
+  };
+}
+
+function sanitiseBlockagesForRoute(gj) {
+  if (!gj || gj.type !== "FeatureCollection" || !Array.isArray(gj.features)) {
+    return null;
+  }
+
+  return {
+    type: "FeatureCollection",
+    features: gj.features.filter(Boolean).map((f) => {
+      const props = (f && f.properties) || {};
+      const radiusRaw =
+        props.radius ?? props.r ?? props.R ?? props["radius (m)"] ?? 0;
+      const radiusNum = Number(radiusRaw);
+
+      return {
+        type: "Feature",
+        geometry: f.geometry,
+        properties: {
+          // keep name/desc etc
+          ...props,
+          radius: Number.isFinite(radiusNum) && radiusNum > 0 ? radiusNum : 0,
+          description: normaliseOptionalText(props.description),
+        },
+      };
+    }),
+  };
 }
 
 export default function App() {
@@ -73,16 +137,19 @@ export default function App() {
     try {
       const result = await apiGet("/ready");
       const text = String(result).trim().toLowerCase();
+
       if (text === "ready") {
         setServerStatus("ready");
         setServerError("");
         return "ready";
       }
+
       if (text === "wait") {
         setServerStatus("wait");
         setServerError("");
         return "wait";
       }
+
       setServerStatus("unknown");
       setServerError(`Unexpected response: ${String(result)}`);
       return "unknown";
@@ -124,7 +191,11 @@ export default function App() {
   const [mapStyle, setMapStyle] = useState("simple");
 
   // Points
-  const [start, setStart] = useState({ lat: "", long: "", description: "Start" });
+  const [start, setStart] = useState({
+    lat: "",
+    long: "",
+    description: "Start",
+  });
   const [end, setEnd] = useState({ lat: "", long: "", description: "End" });
 
   const startPoint = useMemo(() => {
@@ -143,6 +214,12 @@ export default function App() {
 
   const [routeGeoJson, setRouteGeoJson] = useState(null);
 
+  // -------------------- Route memory (for auto reroute) --------------------
+  // If you want auto-reroute, we need to remember what the user searched last.
+  // We store the last request payload (start/end descriptions + coords) and just re-run it.
+  const lastRouteRequestRef = useRef(null); // { startPt, endPt }
+  const hasRequestedRouteRef = useRef(false);
+
   // -------------------- Road types --------------------
   const [validAxisTypes, setValidAxisTypes] = useState([]);
   const [displayAxisTypes, setDisplayAxisTypes] = useState([]);
@@ -160,14 +237,17 @@ export default function App() {
   function syncPendingState() {
     setPendingAxisTypes(Array.from(pendingSetRef.current));
   }
+
   function addPending(type) {
     pendingSetRef.current.add(type);
     syncPendingState();
   }
+
   function removePending(type) {
     pendingSetRef.current.delete(type);
     syncPendingState();
   }
+
   const roadLayerLoading = pendingAxisTypes.length > 0;
 
   async function ensureAxisTypeLoaded(axisType) {
@@ -196,8 +276,9 @@ export default function App() {
 
   function rebuildAxisLayer(selectedTypes) {
     const cache = axisGeoJsonCacheRef.current;
-    const selected = Array.from(new Set((selectedTypes || []).map(normaliseTypeName)))
-      .filter(Boolean);
+    const selected = Array.from(
+      new Set((selectedTypes || []).map(normaliseTypeName))
+    ).filter(Boolean);
 
     if (selected.length === 0) {
       setAxisTypeGeoJson(null);
@@ -237,7 +318,7 @@ export default function App() {
         return;
       }
 
-      await hideAllRoadTypes();
+      hideAllRoadTypes();
     } catch (err) {
       showToast("bad", err.message || "Failed to load road types");
     } finally {
@@ -250,7 +331,9 @@ export default function App() {
       ? validListOverride.slice()
       : sortRoadTypesByImportance(validAxisTypes);
 
-    const all = Array.from(new Set(list.map(normaliseTypeName))).filter(Boolean);
+    const all = Array.from(new Set(list.map(normaliseTypeName))).filter(
+      Boolean
+    );
 
     if (all.length === 0) {
       setDisplayAxisTypes([]);
@@ -321,8 +404,15 @@ export default function App() {
   // -------------------- Blockages --------------------
   const [blockageGeoJson, setBlockageGeoJson] = useState(null);
 
+  // Always keep a ref to latest blockages (prevents stale closures)
+  const blockageGeoJsonRef = useRef(null);
+  useEffect(() => {
+    blockageGeoJsonRef.current = blockageGeoJson;
+  }, [blockageGeoJson]);
+
   // keep known meta so we can fill missing radius/desc if backend doesn’t return them
   const blockageMetaRef = useRef(new Map()); // nameLower -> { radius, description }
+  const pendingDeleteRef = useRef(new Set()); // nameLower while waiting for server to catch up
 
   const [newBlockage, setNewBlockage] = useState({
     lat: "",
@@ -366,16 +456,21 @@ export default function App() {
         ? crypto.randomUUID()
         : String(Date.now() + Math.random());
 
-    setToasts((prev) => [...prev, { id, tone, text }]);
+    setToasts((prev) => {
+      return [...prev, { id, tone, text }];
+    });
 
     window.setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
+      setToasts((prev) => {
+        return prev.filter((t) => t.id !== id);
+      });
     }, 3000);
   }
 
   function upsertBlockageMeta(name, radius, description) {
-    const key = String(name || "").trim().toLowerCase();
+    const key = normaliseBlockageName(name);
     if (!key) return;
+
     const r = Number(radius);
     const d = normaliseOptionalText(description);
 
@@ -384,12 +479,14 @@ export default function App() {
       radius: Number.isFinite(r) && r > 0 ? r : prev.radius,
       description: d !== "" ? d : prev.description,
     };
+
     blockageMetaRef.current.set(key, next);
   }
 
   function enrichBlockageGeoJson(gj) {
     if (!gj || typeof gj !== "object") return gj;
-    if (gj.type !== "FeatureCollection" || !Array.isArray(gj.features)) return gj;
+    if (gj.type !== "FeatureCollection" || !Array.isArray(gj.features))
+      return gj;
 
     const next = { ...gj, features: gj.features.map((f) => f) };
 
@@ -402,24 +499,28 @@ export default function App() {
       }
 
       const name = getBlockageNameFromFeature(f, i);
-      const nameKey = String(name).trim().toLowerCase();
+      const nameKey = normaliseBlockageName(name);
 
-      // cache whatever the backend DID return
       const rFromServer = getBlockageRadiusFromFeature(f);
       const dFromServer = normaliseOptionalText(f.properties.description);
 
+      // cache whatever server DID return (if any)
       if (rFromServer !== null) {
         upsertBlockageMeta(name, rFromServer, dFromServer);
-      } else if (nameKey && blockageMetaRef.current.has(nameKey)) {
+      }
+
+      // fill missing radius from cache
+      if ((rFromServer === null || rFromServer <= 0) && nameKey) {
         const cached = blockageMetaRef.current.get(nameKey);
-        if (cached && Number.isFinite(cached.radius)) {
+        if (cached && Number.isFinite(cached.radius) && cached.radius > 0) {
           f.properties.radius = cached.radius;
         }
       }
 
+      // description must never be null
       if (dFromServer !== "") {
         f.properties.description = dFromServer;
-      } else if (nameKey && blockageMetaRef.current.has(nameKey)) {
+      } else if (nameKey) {
         const cached = blockageMetaRef.current.get(nameKey);
         if (cached && cached.description) {
           f.properties.description = cached.description;
@@ -437,72 +538,403 @@ export default function App() {
   async function refreshBlockages() {
     setBusy(true);
     try {
-      const gj = await apiGet("/blockage");
-      const enriched = enrichBlockageGeoJson(gj);
-      setBlockageGeoJson(enriched);
+      const serverRaw = await apiGet("/blockage");
+      const server = enrichBlockageGeoJson(serverRaw);
+
+      // if server no longer has a pending-deleted key, stop filtering it
+      const serverKeys = new Set(
+        (Array.isArray(server && server.features) ? server.features : []).map(
+          (f, idx) => {
+            return getBlockageKeyFromFeature(f, idx);
+          }
+        )
+      );
+
+      for (const k of Array.from(pendingDeleteRef.current)) {
+        if (!serverKeys.has(k)) pendingDeleteRef.current.delete(k);
+      }
+
+      setBlockageGeoJson((prev) => {
+        const local = enrichBlockageGeoJson(prev);
+
+        const localMap = new Map();
+        const serverMap = new Map();
+
+        if (local && Array.isArray(local.features)) {
+          for (let i = 0; i < local.features.length; i += 1) {
+            const f = local.features[i];
+            const key = getBlockageKeyFromFeature(f, i);
+            if (key) localMap.set(key, f);
+          }
+        }
+
+        if (server && Array.isArray(server.features)) {
+          for (let i = 0; i < server.features.length; i += 1) {
+            const f = server.features[i];
+            const key = getBlockageKeyFromFeature(f, i);
+            if (key) serverMap.set(key, f);
+          }
+        }
+
+        const merged = [];
+        const keys = new Set([...localMap.keys(), ...serverMap.keys()]);
+
+        for (const key of keys) {
+          if (!key) continue;
+          if (pendingDeleteRef.current.has(key)) continue;
+
+          const localF = localMap.get(key) || null;
+          const serverF = serverMap.get(key) || null;
+
+          const chosen = serverF
+            ? structuredClone(serverF)
+            : structuredClone(localF);
+
+          if (!chosen) continue;
+          if (!chosen.properties || typeof chosen.properties !== "object") {
+            chosen.properties = {};
+          }
+
+          // Fill missing radius using local/cache
+          const rChosen = getBlockageRadiusFromFeature(chosen);
+          const rLocal = localF ? getBlockageRadiusFromFeature(localF) : null;
+
+          if (
+            (rChosen === null || rChosen <= 0) &&
+            rLocal !== null &&
+            rLocal > 0
+          ) {
+            chosen.properties.radius = rLocal;
+          } else if (
+            (rChosen === null || rChosen <= 0) &&
+            blockageMetaRef.current.has(key)
+          ) {
+            const cached = blockageMetaRef.current.get(key);
+            if (cached && Number.isFinite(cached.radius) && cached.radius > 0) {
+              chosen.properties.radius = cached.radius;
+            }
+          }
+
+          // Description must never be null
+          const dChosen = normaliseOptionalText(chosen.properties.description);
+          const dLocal = localF
+            ? normaliseOptionalText(
+                localF.properties && localF.properties.description
+              )
+            : "";
+
+          if (!dChosen && dLocal) {
+            chosen.properties.description = dLocal;
+          } else if (!dChosen) {
+            const cached = blockageMetaRef.current.get(key);
+            chosen.properties.description =
+              cached && cached.description ? cached.description : "";
+          }
+
+          merged.push(chosen);
+        }
+
+        return { type: "FeatureCollection", features: merged };
+      });
+
+      // IMPORTANT: return enriched server snapshot so reroute can use it immediately
+      return server;
     } catch (err) {
       showToast("bad", err.message || "Failed to load blockages");
+      return null;
     } finally {
       setBusy(false);
     }
   }
 
-  function blockageNameExists(name) {
-    const key = String(name || "").trim().toLowerCase();
-    if (!key) return false;
+  // -------------------- Route: single handler used by button + auto reroute --------------------
+  const routeInFlightRef = useRef(false);
+  const rerouteTimerRef = useRef(null);
+  const routeReqIdRef = useRef(0);
+  const retryTimerRef = useRef(null);
+  const retryCountRef = useRef(0);
+  const lastRetryOptionsRef = useRef(null);
 
-    if (blockageMetaRef.current.has(key)) return true;
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(rerouteTimerRef.current);
+      window.clearTimeout(retryTimerRef.current);
+    };
+  }, []);
 
-    const feats = Array.isArray(blockageGeoJson && blockageGeoJson.features)
-      ? blockageGeoJson.features
-      : [];
+  async function handleSearchRoute(options) {
+    const opts = options && typeof options === "object" ? options : {};
+    const reason = opts.reason ? String(opts.reason) : "ui";
+    const blockagesOverride =
+      opts.blockagesOverride && typeof opts.blockagesOverride === "object"
+        ? opts.blockagesOverride
+        : null;
 
-    for (let i = 0; i < feats.length; i += 1) {
-      const f = feats[i];
-      const existing = getBlockageNameFromFeature(f, i);
-      if (String(existing || "").trim().toLowerCase() === key) return true;
+    if (serverStatus !== "ready") {
+      console.log("[route] blocked: server not ready", { serverStatus });
+      showToast("warn", "Server not ready yet.");
+      return;
     }
 
-    return false;
+    // Use the latest typed points
+    if (!startPoint || !endPoint) {
+      console.log("[route] blocked: missing start/end", {
+        startPoint,
+        endPoint,
+      });
+      showToast("warn", "Start and End coordinates must be set.");
+      return;
+    }
+
+    // Remember last route request for auto-reroute
+    const startPt = {
+      long: startPoint.long,
+      lat: startPoint.lat,
+      description: start.description || "Start",
+    };
+    const endPt = {
+      long: endPoint.long,
+      lat: endPoint.lat,
+      description: end.description || "End",
+    };
+
+    lastRouteRequestRef.current = { startPt, endPt };
+    hasRequestedRouteRef.current = true;
+
+    if (routeInFlightRef.current) {
+      console.log("[route] skip: in flight");
+      return;
+    }
+
+    routeInFlightRef.current = true;
+    setBusy(true);
+
+    const reqId = (routeReqIdRef.current += 1);
+
+    const blockagesToUse = blockagesOverride
+      ? blockagesOverride
+      : blockageGeoJsonRef.current;
+
+    const body = {
+      startPt,
+      endPt,
+      blockages: sanitiseBlockagesForRoute(blockagesToUse),
+    };
+
+    const count =
+      body.blockages && Array.isArray(body.blockages.features)
+        ? body.blockages.features.length
+        : 0;
+
+    console.log("[route] sending", {
+      reqId,
+      reason,
+      start: startPt,
+      end: endPt,
+      blockagesCount: count,
+    });
+
+    try {
+      const resp = await apiPost("/route", body);
+
+      // NEW: backend may return "Wait" when it’s not ready
+      if (typeof resp === "string") {
+        const text = resp.trim().toLowerCase();
+
+        if (text === "wait") {
+          console.log("[route] backend says WAIT", { reqId, reason });
+
+          // keep the existing route (do not clear)
+          // retry a few times
+          if (retryCountRef.current < 5) {
+            lastRetryOptionsRef.current = { reason, blockagesOverride };
+            scheduleRouteRetry({ reason, blockagesOverride }, "backend_wait");
+          } else {
+            console.log("[route] retry limit reached", { reqId });
+            showToast(
+              "warn",
+              "Route engine still warming up. Try again shortly."
+            );
+          }
+
+          return;
+        }
+
+        // any other string is still invalid
+        console.log("[route] bad response shape (string)", {
+          reqId,
+          gotType: "string",
+          resp,
+        });
+        showToast("bad", "Route API returned invalid data.");
+        return;
+      }
+
+      // Normal GeoJSON success path
+      if (
+        !resp ||
+        typeof resp !== "object" ||
+        resp.type !== "FeatureCollection" ||
+        !Array.isArray(resp.features)
+      ) {
+        console.log("[route] bad response shape", {
+          reqId,
+          gotType: typeof resp,
+          resp,
+        });
+        showToast("bad", "Route API returned invalid data.");
+        return;
+      }
+
+      // NEW: on success, reset retry counters
+      retryCountRef.current = 0;
+      lastRetryOptionsRef.current = null;
+
+      console.log("[route] success", {
+        reqId,
+        gotType: resp.type,
+        gotFeatures: resp.features.length,
+      });
+
+      setRouteGeoJson(resp);
+      showToast("good", "Route updated.");
+    } catch (err) {
+      console.log("[route] failed", { reqId, err });
+      showToast("bad", err.message || "Upstream request failed");
+    } finally {
+      routeInFlightRef.current = false;
+      setBusy(false);
+    }
   }
 
+  function scheduleAutoReroute(reason, blockagesOverride) {
+    // literally call the SAME handler as Search Route button
+    if (!hasRequestedRouteRef.current || !lastRouteRequestRef.current) {
+      console.log("[reroute] skip: no last route request");
+      return;
+    }
+    if (serverStatus !== "ready") {
+      console.log("[reroute] skip: server not ready", { serverStatus });
+      return;
+    }
+
+    window.clearTimeout(rerouteTimerRef.current);
+    rerouteTimerRef.current = window.setTimeout(() => {
+      console.log("[reroute] triggering via same handler", {
+        hasLastRequest: Boolean(lastRouteRequestRef.current),
+        blockagesCount:
+          blockagesOverride && Array.isArray(blockagesOverride.features)
+            ? blockagesOverride.features.length
+            : (() => {
+                const gj = blockageGeoJsonRef.current;
+                return gj && Array.isArray(gj.features)
+                  ? gj.features.length
+                  : 0;
+              })(),
+      });
+
+      handleSearchRoute({
+        reason: reason || "auto",
+        blockagesOverride: blockagesOverride || null,
+      });
+    }, 250);
+  }
+  function scheduleRouteRetry(options, label) {
+    const attempt = retryCountRef.current;
+    const delays = [300, 700, 1200, 2000, 3000]; // tweak if you want
+    const delay = delays[Math.min(attempt, delays.length - 1)];
+
+    window.clearTimeout(retryTimerRef.current);
+
+    console.log("[route] retry scheduled", {
+      attempt: attempt + 1,
+      inMs: delay,
+      label: label || "",
+    });
+
+    retryTimerRef.current = window.setTimeout(() => {
+      retryCountRef.current += 1;
+      handleSearchRoute({
+        ...options,
+        reason: `${options.reason || "auto"}:retry${retryCountRef.current}`,
+        _isRetry: true,
+      });
+    }, delay);
+  }
+
+  // -------------------- Add / Delete blockages (then call Search Route handler) --------------------
   async function addBlockage() {
     const lat = toNumber(newBlockage.lat);
     const long = toNumber(newBlockage.long);
     const radius = toNumber(newBlockage.radius);
-    const name = String(newBlockage.name || "").trim();
-    const desc = normaliseOptionalText(newBlockage.description);
+
+    const nameRaw = String(newBlockage.name || "").trim();
+    const nameKey = normaliseBlockageName(nameRaw);
 
     if (lat === null || long === null || radius === null) {
-      showToast("warn", "Blockage coordinates and radius must be valid numbers.");
+      showToast(
+        "warn",
+        "Blockage coordinates and radius must be valid numbers."
+      );
       return;
     }
-    if (!name) {
+
+    if (!nameRaw) {
       showToast("warn", "Blockage name is required.");
       return;
     }
-    if (blockageNameExists(name)) {
-      showToast("warn", "A blockage with that name already exists. Please use a unique name.");
+
+    const existing = getBlockageNamesSet(blockageGeoJsonRef.current);
+    if (existing.has(nameKey)) {
+      showToast("bad", "A blockage with the same name already exists.");
       return;
     }
 
+    const desc = String(newBlockage.description || "").trim();
+    upsertBlockageMeta(nameRaw, radius, desc);
+
+    console.log("[blockage:add] posting", {
+      name: nameRaw,
+      lat,
+      long,
+      radius,
+    });
+
+    // optimistic update so it appears immediately
+    setBlockageGeoJson((prev) => {
+      const base =
+        prev && prev.type === "FeatureCollection"
+          ? prev
+          : { type: "FeatureCollection", features: [] };
+
+      const nextFeatures = Array.isArray(base.features)
+        ? base.features.slice()
+        : [];
+
+      nextFeatures.push({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [long, lat] },
+        properties: {
+          name: nameRaw,
+          radius: radius,
+          description: desc,
+        },
+      });
+
+      return { type: "FeatureCollection", features: nextFeatures };
+    });
+
     setBusy(true);
     try {
-      const body = {
+      await apiPost("/blockage", {
         point: { long, lat },
         radius,
-        name,
-        description: desc, // never null
-      };
-
-      await apiPost("/blockage", body);
-
-      // cache meta so radius/desc show even if backend omits them
-      upsertBlockageMeta(name, radius, desc);
+        name: nameRaw,
+        description: desc,
+      });
 
       showToast("good", "Blockage added.");
 
-      // clear ALL inputs after add
       setNewBlockage({
         lat: "",
         long: "",
@@ -511,8 +943,11 @@ export default function App() {
         description: "",
       });
 
-      await refreshBlockages();
+      // sync from server then auto reroute using SAME handler
+      const synced = await refreshBlockages();
+      scheduleAutoReroute("blockage:add", synced);
     } catch (err) {
+      console.log("[blockage:add] failed", { err });
       showToast("bad", err.message || "Failed to add blockage");
     } finally {
       setBusy(false);
@@ -523,88 +958,70 @@ export default function App() {
     const nm = String(name || "").trim();
     if (!nm) return;
 
+    const key = normaliseBlockageName(nm);
+    pendingDeleteRef.current.add(key);
+
+    console.log("[blockage:delete] deleting", { name: nm });
+
+    // optimistic remove immediately
+    setBlockageGeoJson((prev) => {
+      return removeBlockageFromGeoJsonByKey(prev, key);
+    });
+
+    blockageMetaRef.current.delete(key);
+
     setBusy(true);
     try {
       await apiDelete(`/blockage/${encodeURIComponent(nm)}`);
-
-      // also drop cached meta (optional but keeps things tidy)
-      blockageMetaRef.current.delete(nm.toLowerCase());
-
       showToast("good", "Blockage deleted.");
-      await refreshBlockages();
+
+      const synced = await refreshBlockages();
+      scheduleAutoReroute("blockage:delete", synced);
     } catch (err) {
+      console.log("[blockage:delete] failed", { err });
+      pendingDeleteRef.current.delete(key);
       showToast("bad", err.message || "Failed to delete blockage");
+
+      const synced = await refreshBlockages();
+      scheduleAutoReroute("blockage:delete:recover", synced);
     } finally {
       setBusy(false);
     }
   }
 
-  // -------------------- Route --------------------
-  async function requestRoute() {
-    if (!startPoint || !endPoint) {
-      showToast("warn", "Start and End coordinates must be set.");
-      return;
-    }
-
-    setRouteGeoJson(null);
-    setBusy(true);
-
-    try {
-      const body = {
-        startPt: {
-          long: startPoint.long,
-          lat: startPoint.lat,
-          description: start.description || "Start",
-        },
-        endPt: {
-          long: endPoint.long,
-          lat: endPoint.lat,
-          description: end.description || "End",
-        },
-        blockages: blockageGeoJson || null,
-      };
-
-      const gj = await apiPost("/route", body);
-      setRouteGeoJson(gj);
-      showToast("good", "Route loaded.");
-    } catch (err) {
-      showToast("bad", err.message || "Failed to request route");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  useEffect(() => {
-    if (!startPoint || !endPoint) return;
-    if (!routeGeoJson) return;
-    requestRoute();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blockageGeoJson]);
-
+  // -------------------- Map picking --------------------
   function onPickPoint(point) {
     if (selectionMode === "start") {
-      setStart((prev) => ({ ...prev, lat: String(point.lat), long: String(point.long) }));
+      setStart((prev) => {
+        return { ...prev, lat: String(point.lat), long: String(point.long) };
+      });
       setSelectionMode(null);
       showToast("good", "Start point set.");
       return;
     }
 
     if (selectionMode === "end") {
-      setEnd((prev) => ({ ...prev, lat: String(point.lat), long: String(point.long) }));
+      setEnd((prev) => {
+        return { ...prev, lat: String(point.lat), long: String(point.long) };
+      });
       setSelectionMode(null);
       showToast("good", "End point set.");
       return;
     }
 
     if (selectionMode === "blockage") {
-      setNewBlockage((prev) => ({ ...prev, lat: String(point.lat), long: String(point.long) }));
+      setNewBlockage((prev) => {
+        return { ...prev, lat: String(point.lat), long: String(point.long) };
+      });
       setSelectionMode(null);
       showToast("good", "Blockage point set.");
     }
   }
 
   function focusOnBlockageFeature(feature) {
-    if (!feature || !feature.geometry || feature.geometry.type !== "Point") return;
+    if (!feature || !feature.geometry || feature.geometry.type !== "Point") {
+      return;
+    }
     if (!Array.isArray(feature.geometry.coordinates)) return;
 
     const lng = Number(feature.geometry.coordinates[0]);
@@ -648,11 +1065,15 @@ export default function App() {
             />
           </button>
 
-          {serverError ? <div className="text-xs text-red-600">{serverError}</div> : null}
+          {serverError ? (
+            <div className="text-xs text-red-600">{serverError}</div>
+          ) : null}
         </div>
 
         <div className="text-center">
-          <div className="text-lg font-semibold text-slate-900">SG Routing App</div>
+          <div className="text-lg font-semibold text-slate-900">
+            SG Routing App
+          </div>
         </div>
 
         <div className="flex items-center justify-end gap-2">
@@ -680,14 +1101,11 @@ export default function App() {
               setTab(v);
               setSelectionMode(null);
 
-              // Do NOT clear axis/blockages on tab change:
-              // keep overlays visible on the map.
-
               if (v === TAB_ROAD_TYPES && validAxisTypes.length === 0) {
                 await refreshRoadTypes();
               }
 
-              if (v === TAB_BLOCKAGES && !blockageGeoJson) {
+              if (v === TAB_BLOCKAGES && !blockageGeoJsonRef.current) {
                 await refreshBlockages();
               }
             }}
@@ -704,7 +1122,11 @@ export default function App() {
                   <FloatingInput
                     label="Longitude"
                     value={start.long}
-                    onChange={(e) => setStart((p) => ({ ...p, long: e.target.value }))}
+                    onChange={(e) => {
+                      setStart((p) => {
+                        return { ...p, long: e.target.value };
+                      });
+                    }}
                     inputMode="decimal"
                   />
 
@@ -712,7 +1134,11 @@ export default function App() {
                     <FloatingInput
                       label="Latitude"
                       value={start.lat}
-                      onChange={(e) => setStart((p) => ({ ...p, lat: e.target.value }))}
+                      onChange={(e) => {
+                        setStart((p) => {
+                          return { ...p, lat: e.target.value };
+                        });
+                      }}
                       inputMode="decimal"
                     />
                   </div>
@@ -720,7 +1146,11 @@ export default function App() {
                   <div className="mt-3 flex gap-2">
                     <button
                       type="button"
-                      onClick={() => setSelectionMode((prev) => (prev === "start" ? null : "start"))}
+                      onClick={() => {
+                        setSelectionMode((prev) => {
+                          return prev === "start" ? null : "start";
+                        });
+                      }}
                       className={
                         "inline-flex items-center justify-center rounded-lg px-3 py-2 text-xs font-semibold transition " +
                         (selectionMode === "start"
@@ -733,7 +1163,11 @@ export default function App() {
 
                     <button
                       type="button"
-                      onClick={() => setStart((p) => ({ ...p, lat: "", long: "" }))}
+                      onClick={() => {
+                        setStart((p) => {
+                          return { ...p, lat: "", long: "" };
+                        });
+                      }}
                       className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 active:translate-y-[1px]"
                     >
                       Clear
@@ -751,7 +1185,11 @@ export default function App() {
                   <FloatingInput
                     label="Longitude"
                     value={end.long}
-                    onChange={(e) => setEnd((p) => ({ ...p, long: e.target.value }))}
+                    onChange={(e) => {
+                      setEnd((p) => {
+                        return { ...p, long: e.target.value };
+                      });
+                    }}
                     inputMode="decimal"
                   />
 
@@ -759,7 +1197,11 @@ export default function App() {
                     <FloatingInput
                       label="Latitude"
                       value={end.lat}
-                      onChange={(e) => setEnd((p) => ({ ...p, lat: e.target.value }))}
+                      onChange={(e) => {
+                        setEnd((p) => {
+                          return { ...p, lat: e.target.value };
+                        });
+                      }}
                       inputMode="decimal"
                     />
                   </div>
@@ -767,7 +1209,11 @@ export default function App() {
                   <div className="mt-3 flex gap-2">
                     <button
                       type="button"
-                      onClick={() => setSelectionMode((prev) => (prev === "end" ? null : "end"))}
+                      onClick={() => {
+                        setSelectionMode((prev) => {
+                          return prev === "end" ? null : "end";
+                        });
+                      }}
                       className={
                         "inline-flex items-center justify-center rounded-lg px-3 py-2 text-xs font-semibold transition " +
                         (selectionMode === "end"
@@ -780,7 +1226,11 @@ export default function App() {
 
                     <button
                       type="button"
-                      onClick={() => setEnd((p) => ({ ...p, lat: "", long: "" }))}
+                      onClick={() => {
+                        setEnd((p) => {
+                          return { ...p, lat: "", long: "" };
+                        });
+                      }}
                       className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 active:translate-y-[1px]"
                     >
                       Clear
@@ -792,14 +1242,23 @@ export default function App() {
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={() => setRouteGeoJson(null)}
+                  onClick={() => {
+                    setRouteGeoJson(null);
+                    hasRequestedRouteRef.current = false;
+                    lastRouteRequestRef.current = null;
+                    console.log("[route] cleared by user");
+                  }}
                   className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100"
                 >
                   Clear Route
                 </button>
+
                 <button
                   type="button"
-                  onClick={requestRoute}
+                  onClick={() => {
+                    console.log("[ui] Search Route clicked");
+                    handleSearchRoute({ reason: "ui" });
+                  }}
                   disabled={busy || serverStatus !== "ready"}
                   className="rounded-xl bg-blue-400 px-3 py-2.5 text-sm font-semibold text-white hover:bg-blue-600 disabled:opacity-60"
                 >
@@ -817,14 +1276,18 @@ export default function App() {
               onRefresh={refreshRoadTypes}
               onToggle={toggleRoadType}
               onHideAll={hideAllRoadTypes}
-              onSelectAll={() => selectAllRoadTypes()}
+              onSelectAll={() => {
+                selectAllRoadTypes();
+              }}
             />
           ) : null}
 
           {tab === TAB_BLOCKAGES ? (
             <div className="mt-3 space-y-3">
               <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold text-slate-900">Blockages</div>
+                <div className="text-sm font-semibold text-slate-900">
+                  Blockages
+                </div>
                 <button
                   type="button"
                   onClick={refreshBlockages}
@@ -836,26 +1299,38 @@ export default function App() {
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white p-3">
-                <div className="text-xs font-semibold text-slate-700">Add blockage</div>
+                <div className="text-xs font-semibold text-slate-700">
+                  Add blockage
+                </div>
 
                 <div className="mt-2 space-y-2">
                   <input
                     className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
                     placeholder="Latitude"
                     value={newBlockage.lat}
-                    onChange={(e) => setNewBlockage((p) => ({ ...p, lat: e.target.value }))}
+                    onChange={(e) => {
+                      setNewBlockage((p) => {
+                        return { ...p, lat: e.target.value };
+                      });
+                    }}
                   />
 
                   <input
                     className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
                     placeholder="Longitude"
                     value={newBlockage.long}
-                    onChange={(e) => setNewBlockage((p) => ({ ...p, long: e.target.value }))}
+                    onChange={(e) => {
+                      setNewBlockage((p) => {
+                        return { ...p, long: e.target.value };
+                      });
+                    }}
                   />
 
                   <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                     <div className="flex items-center justify-between">
-                      <div className="text-xs font-semibold text-slate-700">Radius</div>
+                      <div className="text-xs font-semibold text-slate-700">
+                        Radius
+                      </div>
                       <div className="text-xs text-slate-600">
                         {Number(newBlockage.radius || 0)} m
                       </div>
@@ -867,7 +1342,11 @@ export default function App() {
                       max={2000}
                       step={10}
                       value={Number(newBlockage.radius || 200)}
-                      onChange={(e) => setNewBlockage((p) => ({ ...p, radius: e.target.value }))}
+                      onChange={(e) => {
+                        setNewBlockage((p) => {
+                          return { ...p, radius: e.target.value };
+                        });
+                      }}
                       className="mt-2 w-full"
                     />
                   </div>
@@ -876,7 +1355,11 @@ export default function App() {
                     className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
                     placeholder="Name"
                     value={newBlockage.name}
-                    onChange={(e) => setNewBlockage((p) => ({ ...p, name: e.target.value }))}
+                    onChange={(e) => {
+                      setNewBlockage((p) => {
+                        return { ...p, name: e.target.value };
+                      });
+                    }}
                   />
 
                   <textarea
@@ -884,13 +1367,21 @@ export default function App() {
                     placeholder="Description (optional)"
                     rows={2}
                     value={newBlockage.description}
-                    onChange={(e) => setNewBlockage((p) => ({ ...p, description: e.target.value }))}
+                    onChange={(e) => {
+                      setNewBlockage((p) => {
+                        return { ...p, description: e.target.value };
+                      });
+                    }}
                   />
 
                   <div className="mt-2 flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setSelectionMode((prev) => (prev === "blockage" ? null : "blockage"))}
+                      onClick={() => {
+                        setSelectionMode((prev) => {
+                          return prev === "blockage" ? null : "blockage";
+                        });
+                      }}
                       className={
                         "rounded-lg px-2.5 py-1.5 text-xs font-semibold transition " +
                         (selectionMode === "blockage"
@@ -903,15 +1394,15 @@ export default function App() {
 
                     <button
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
                         setNewBlockage({
                           lat: "",
                           long: "",
                           radius: 200,
                           name: "",
                           description: "",
-                        })
-                      }
+                        });
+                      }}
                       className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 active:translate-y-[1px]"
                     >
                       Clear
@@ -932,7 +1423,9 @@ export default function App() {
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white p-3">
-                <div className="text-xs font-semibold text-slate-700">Existing blockages</div>
+                <div className="text-xs font-semibold text-slate-700">
+                  Existing blockages
+                </div>
                 <div className="mt-2 max-h-60 overflow-auto">
                   <BlockageList
                     geojson={blockageGeoJson}
@@ -953,8 +1446,8 @@ export default function App() {
             startPoint={startPoint}
             endPoint={endPoint}
             routeGeoJson={routeGeoJson}
-            axisTypeGeoJson={axisTypeGeoJson}     // keep visible even when tab changes
-            blockageGeoJson={blockageGeoJson}     // keep visible even when tab changes
+            axisTypeGeoJson={axisTypeGeoJson}
+            blockageGeoJson={blockageGeoJson}
             draftBlockage={draftBlockage}
             focusTarget={focusTarget}
           />
@@ -963,13 +1456,18 @@ export default function App() {
 
       <ToastStack toasts={toasts} />
 
-      {roadLayerLoading ? <LoadingOverlay title="Loading road type layer(s)…" /> : null}
+      {roadLayerLoading ? (
+        <LoadingOverlay title="Loading road type layer(s)…" />
+      ) : null}
     </div>
   );
 }
 
+// FIX: No nested <button>. Use a div row + separate buttons.
 function BlockageList({ geojson, onDelete, onFocus }) {
-  const features = Array.isArray(geojson && geojson.features) ? geojson.features : [];
+  const features = Array.isArray(geojson && geojson.features)
+    ? geojson.features
+    : [];
 
   if (features.length === 0) {
     return <div className="text-xs text-slate-500">No blockages loaded.</div>;
@@ -981,37 +1479,44 @@ function BlockageList({ geojson, onDelete, onFocus }) {
         const props = f && f.properties ? f.properties : {};
         const name = props.name || props.id || String(idx);
         const desc = normaliseOptionalText(props.description);
+
         const radius =
           props.radius ??
           props.r ??
+          props.R ??
+          props["radius (m)"] ??
           (f && f.radius) ??
           "";
 
         return (
-          <button
-            type="button"
+          <div
             key={String(name)}
-            onClick={() => {
-              if (typeof onFocus === "function") onFocus(f);
-            }}
-            className="w-full rounded-lg border border-slate-200 bg-white p-2 text-left hover:bg-slate-50"
+            className="w-full rounded-lg border border-slate-200 bg-white p-2 hover:bg-slate-50"
           >
             <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="text-sm font-semibold text-slate-900">{String(name)}</div>
-                {desc ? <div className="text-xs text-slate-600">{desc}</div> : null}
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof onFocus === "function") onFocus(f);
+                }}
+                className="flex-1 text-left"
+              >
+                <div className="text-sm font-semibold text-slate-900">
+                  {String(name)}
+                </div>
+                {desc ? (
+                  <div className="text-xs text-slate-600">{desc}</div>
+                ) : null}
                 {radius ? (
                   <div className="mt-1 text-[11px] text-slate-500">
                     Radius: {String(radius)} m
                   </div>
                 ) : null}
-              </div>
+              </button>
 
               <button
                 type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
+                onClick={() => {
                   if (typeof onDelete === "function") onDelete(String(name));
                 }}
                 className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-100"
@@ -1019,7 +1524,7 @@ function BlockageList({ geojson, onDelete, onFocus }) {
                 Delete
               </button>
             </div>
-          </button>
+          </div>
         );
       })}
     </div>
