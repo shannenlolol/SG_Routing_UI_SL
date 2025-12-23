@@ -154,12 +154,13 @@ export function useRouting(serverStatus, blockageGeoJsonRef, transportMode, show
       lastRetryOptionsRef.current = null;
 
       console.log("[route] success", { reqId, gotType: resp.type, gotFeatures: resp.features.length });
-
+      console.log(resp.features, resp.type);
+      const formatTransportMode = transportMode.charAt(0).toUpperCase() + transportMode.slice(1);
       setRouteGeoJson(resp);
-      showToast("good", "Route updated.");
+      showToast("good", `${formatTransportMode} route searched successfully.`);
     } catch (err) {
       console.log("[route] failed", { reqId, err });
-      showToast("bad", err.message || "Upstream request failed");
+      showToast("bad", err.message || "Unable to get route. Please try again.");
     } finally {
       routeInFlightRef.current = false;
     }

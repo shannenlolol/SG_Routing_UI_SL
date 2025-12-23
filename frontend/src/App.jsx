@@ -282,6 +282,8 @@ export default function App() {
               checked={displayAxisTypes}
               loading={roadLayerLoading}
               colors={roadTypeColors}
+              transportMode={transportMode}
+              onTransportModeChange={setTransportMode}
               onRefresh={refreshRoadTypes}
               onToggle={toggleRoadType}
               onHideAll={hideAllRoadTypes}

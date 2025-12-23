@@ -1,9 +1,9 @@
 // src/hooks/useRoadTypes.js
 import { useState, useRef, useEffect } from "react";
 import { apiGet, apiPost } from "../api/client";
-import { normaliseTypeName, sortRoadTypesByImportance } from "../utils/roadTypes";
+import { normaliseTypeName } from "../utils/roadTypes";
 import { getRoadTypesForMode } from "../utils/transportModes";
-import { generateRoadTypeColors } from "../utils/roadTypeDescriptions";
+import { generateRoadTypeColors,sortRoadTypesByImportance } from "../utils/roadTypeDescriptions";
 
 export function useRoadTypes(showToast, transportMode) {
   const [allRoadTypes, setAllRoadTypes] = useState([]); // All available types from API
@@ -65,7 +65,10 @@ export function useRoadTypes(showToast, transportMode) {
     if (cache.has(typeName)) return cache.get(typeName);
 
     const gj = await apiGet(`/axisType/${encodeURIComponent(typeName)}`);
-
+    console.log("[roadTypes] loaded axis type", typeName, gj);
+    if (gj === "Wait") {
+      throw new Error("Road type \"" + typeName + "\" layer is still being prepared. Try again shortly.");
+    }
     if (gj && typeof gj === "object" && Array.isArray(gj.features)) {
       for (let i = 0; i < gj.features.length; i += 1) {
         const f = gj.features[i];
@@ -123,15 +126,13 @@ export function useRoadTypes(showToast, transportMode) {
         console.warn("[roadTypes] failed to set valid road types", err);
       }
 
-      // Then fetch what the server considers valid
-      const valid = await apiGet("/validAxisTypes");
-      const raw = Array.isArray(valid) ? valid.map(normaliseTypeName) : [];
+      const raw = Array.isArray(availableTypes) ? availableTypes.map(normaliseTypeName) : [];
       const ordered = sortRoadTypesByImportance(raw);
       
-      setValidAxisTypes(availableTypes);
+      setValidAxisTypes(ordered);
 
       const current = displayAxisTypesRef.current;
-      const cleaned = current.filter((t) => availableTypes.includes(t));
+      const cleaned = current.filter((t) => ordered.includes(t));
 
       if (cleaned.length > 0) {
         setDisplayAxisTypes(cleaned);
@@ -146,20 +147,10 @@ export function useRoadTypes(showToast, transportMode) {
     }
   }
 
-  async function selectAllRoadTypes(validListOverride) {
-    const list = Array.isArray(validListOverride)
-      ? validListOverride.slice()
-      : sortRoadTypesByImportance(validAxisTypes);
+  async function selectAllRoadTypes() {
+    const list = sortRoadTypesByImportance(validAxisTypes);
 
-    // Filter based on transport mode
-    const allowedTypes = getRoadTypesForMode(transportMode);
-    const filtered = list.filter((type) => 
-      allowedTypes.some((allowed) => 
-        normaliseTypeName(allowed) === normaliseTypeName(type)
-      )
-    );
-
-    const all = Array.from(new Set(filtered.map(normaliseTypeName))).filter(Boolean);
+    const all = Array.from(new Set(list.map(normaliseTypeName))).filter(Boolean);
 
     if (all.length === 0) {
       setDisplayAxisTypes([]);
