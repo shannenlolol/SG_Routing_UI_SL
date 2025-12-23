@@ -34,10 +34,13 @@ export default function App() {
   const [transportMode, setTransportMode] = useState(TRANSPORT_MODES.CAR);
 
   const {
+    allRoadTypes,
+    roadTypeColors,
     validAxisTypes,
     displayAxisTypes,
     axisTypeGeoJson,
     roadLayerLoading,
+    fetchAllRoadTypes,
     refreshRoadTypes,
     selectAllRoadTypes,
     toggleRoadType,
@@ -278,6 +281,7 @@ export default function App() {
               options={validAxisTypes}
               checked={displayAxisTypes}
               loading={roadLayerLoading}
+              colors={roadTypeColors}
               onRefresh={refreshRoadTypes}
               onToggle={toggleRoadType}
               onHideAll={hideAllRoadTypes}

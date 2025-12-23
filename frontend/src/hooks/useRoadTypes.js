@@ -3,8 +3,11 @@ import { useState, useRef, useEffect } from "react";
 import { apiGet, apiPost } from "../api/client";
 import { normaliseTypeName, sortRoadTypesByImportance } from "../utils/roadTypes";
 import { getRoadTypesForMode } from "../utils/transportModes";
+import { generateRoadTypeColors } from "../utils/roadTypeDescriptions";
 
 export function useRoadTypes(showToast, transportMode) {
+  const [allRoadTypes, setAllRoadTypes] = useState([]); // All available types from API
+  const [roadTypeColors, setRoadTypeColors] = useState({}); // Color mapping
   const [validAxisTypes, setValidAxisTypes] = useState([]);
   const [displayAxisTypes, setDisplayAxisTypes] = useState([]);
   const [axisTypeGeoJson, setAxisTypeGeoJson] = useState(null);
@@ -30,6 +33,28 @@ export function useRoadTypes(showToast, transportMode) {
   function removePending(type) {
     pendingSetRef.current.delete(type);
     syncPendingState();
+  }
+
+  async function fetchAllRoadTypes() {
+    try {
+      const types = await apiGet("/allAxisTypes");
+      if (Array.isArray(types)) {
+        const normalized = types.map(normaliseTypeName);
+        setAllRoadTypes(normalized);
+        
+        // Generate colors for all types
+        const colors = generateRoadTypeColors(normalized);
+        setRoadTypeColors(colors);
+        console.log("[roadTypes] fetched all road types", normalized);
+        
+        return normalized;
+      }
+      return [];
+    } catch (err) {
+      console.error("[roadTypes] failed to fetch all road types", err);
+      showToast("bad", "Failed to fetch available road types");
+      return [];
+    }
   }
 
   async function ensureAxisTypeLoaded(axisType) {
@@ -86,12 +111,14 @@ export function useRoadTypes(showToast, transportMode) {
   async function refreshRoadTypes() {
     addPending("refresh");
     try {
-      // First, set the valid road types based on transport mode
-      const allowedTypes = getRoadTypesForMode(transportMode);
-      console.log("[roadTypes] setting valid road types for", transportMode, allowedTypes);
-      
+      // First, fetch all available road types if not already loaded
+      let availableTypes = allRoadTypes;
+      if (availableTypes.length === 0) {
+        availableTypes = await fetchAllRoadTypes();
+      }
+
       try {
-        await apiPost("/changeValidRoadTypes", allowedTypes);
+        await apiPost("/changeValidRoadTypes", availableTypes);
       } catch (err) {
         console.warn("[roadTypes] failed to set valid road types", err);
       }
@@ -101,17 +128,10 @@ export function useRoadTypes(showToast, transportMode) {
       const raw = Array.isArray(valid) ? valid.map(normaliseTypeName) : [];
       const ordered = sortRoadTypesByImportance(raw);
       
-      // Filter based on transport mode
-      const filtered = ordered.filter((type) => 
-        allowedTypes.some((allowed) => 
-          normaliseTypeName(allowed) === type
-        )
-      );
-      
-      setValidAxisTypes(filtered);
+      setValidAxisTypes(availableTypes);
 
       const current = displayAxisTypesRef.current;
-      const cleaned = current.filter((t) => filtered.includes(t));
+      const cleaned = current.filter((t) => availableTypes.includes(t));
 
       if (cleaned.length > 0) {
         setDisplayAxisTypes(cleaned);
@@ -208,11 +228,14 @@ export function useRoadTypes(showToast, transportMode) {
   }
 
   return {
+    allRoadTypes,
+    roadTypeColors,
     validAxisTypes,
     displayAxisTypes,
     axisTypeGeoJson,
     pendingAxisTypes,
     roadLayerLoading: pendingAxisTypes.length > 0,
+    fetchAllRoadTypes,
     refreshRoadTypes,
     selectAllRoadTypes,
     toggleRoadType,
