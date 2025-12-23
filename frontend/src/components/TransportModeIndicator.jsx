@@ -20,9 +20,6 @@ export default function TransportModeIndicator({
 
   return (
     <div className="space-y-2">
-      <div className="text-xs font-semibold text-slate-700 text-center">
-        Quick Select by Transport Mode
-      </div>
       
       <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
         {modes.map((mode) => {

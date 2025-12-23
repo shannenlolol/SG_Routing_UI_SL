@@ -64,7 +64,10 @@ export function useRoadTypes(showToast, transportMode) {
     if (cache.has(typeName)) return cache.get(typeName);
 
     const gj = await apiGet(`/axisType/${encodeURIComponent(typeName)}`);
-
+    console.log("[roadTypes] loaded axis type", typeName, gj);
+    if (gj === "Wait") {
+      throw new Error("Road type \"" + typeName + "\" layer is unavailable. Try again shortly.");
+    }
     if (gj && typeof gj === "object" && Array.isArray(gj.features)) {
       for (let i = 0; i < gj.features.length; i += 1) {
         const f = gj.features[i];

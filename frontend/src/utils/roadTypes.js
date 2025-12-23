@@ -1,17 +1,45 @@
 // src/utils/roadTypes.js
 
 const META = [
-  { value: "motorway", label: "Motorway", colour: "#dc2626", rank: 1 },
-  { value: "motorway_link", label: "Motorway Link", colour: "#f97316", rank: 2 },
-  { value: "trunk", label: "Trunk", colour: "#16a34a", rank: 3 },
-  { value: "trunk_link", label: "Trunk Link", colour: "#22c55e", rank: 4 },
-  { value: "primary", label: "Primary", colour: "#ea580c", rank: 5 },
-  { value: "primary_link", label: "Primary Link", colour: "#fb923c", rank: 6 },
-  { value: "secondary", label: "Secondary", colour: "#7c3aed", rank: 7 },
-  { value: "secondary_link", label: "Secondary Link", colour: "#a78bfa", rank: 8 },
-  { value: "tertiary", label: "Tertiary", colour: "#ca8a04", rank: 9 },
-  { value: "tertiary_link", label: "Tertiary Link", colour: "#facc15", rank: 10 },
-  { value: "residential", label: "Residential", colour: "#0ea5e9", rank: 11 },
+  // Major highways and expressways
+  { value: "motorway",       label: "Motorway",        colour: "#dc2626", rank: 1 },
+  { value: "motorway_link",  label: "Motorway Link",   colour: "#f87171", rank: 2 },
+  { value: "trunk",          label: "Trunk",           colour: "#16a34a", rank: 3 },
+  { value: "trunk_link",     label: "Trunk Link",      colour: "#4ade80", rank: 4 },
+
+  // Major roads
+  { value: "primary",        label: "Primary",         colour: "#ea580c", rank: 5 },
+  { value: "primary_link",   label: "Primary Link",    colour: "#fb923c", rank: 6 },
+  { value: "secondary",      label: "Secondary",       colour: "#7c3aed", rank: 7 },
+  { value: "secondary_link", label: "Secondary Link",  colour: "#a78bfa", rank: 8 },
+  { value: "tertiary",       label: "Tertiary",        colour: "#ca8a04", rank: 9 },
+  { value: "tertiary_link",  label: "Tertiary Link",   colour: "#fbbf24", rank: 10 },
+
+  // Residential and local
+  { value: "residential",    label: "Residential",     colour: "#0ea5e9", rank: 11 },
+  { value: "living_street",  label: "Living Street",   colour: "#38bdf8", rank: 12 },
+
+  // Cycling infrastructure
+  { value: "cycleway",       label: "Cycleway",        colour: "#10b981", rank: 13 },
+
+  // Pedestrian infrastructure
+  { value: "footway",        label: "Footway",         colour: "#10b981", rank: 14 },
+  { value: "pedestrian",     label: "Pedestrian",      colour: "#14b8a6", rank: 15 },
+  { value: "path",           label: "Path",            colour: "#2dd4bf", rank: 16 },
+  { value: "crossing",       label: "Crossing",        colour: "#5eead4", rank: 17 },
+  { value: "steps",          label: "Steps",           colour: "#99f6e4", rank: 18 },
+  { value: "track",          label: "Track",           colour: "#99f6e4", rank: 19 },
+
+  // Construction/planning/minor
+  { value: "road",           label: "Road",            colour: "#64748b", rank: 20 },
+  { value: "bridleway",      label: "Bridleway",       colour: "#64748b", rank: 21 },
+  { value: "construction",   label: "Construction",    colour: "#64748b", rank: 22 },
+  { value: "raceway",        label: "Raceway",         colour: "#64748b", rank: 23 },
+  { value: "corridor",       label: "Corridor",        colour: "#64748b", rank: 24 },
+  { value: "elevator",       label: "Elevator",        colour: "#64748b", rank: 25 },
+  { value: "service",        label: "Service",         colour: "#64748b", rank: 26 },
+  { value: "proposed",       label: "Proposed",        colour: "#64748b", rank: 27 },
+  { value: "unclassified",   label: "Unclassified",    colour: "#64748b", rank: 28 },
 ];
 
 export const ROAD_TYPE_META_BY_VALUE = META.reduce((acc, item) => {
