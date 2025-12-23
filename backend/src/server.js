@@ -125,7 +125,6 @@ app.get("/api/axisType/:type", async (req, res) => {
   }
 });
 
-// Optional: change valid road types
 app.post("/api/changeValidRoadTypes", async (req, res) => {
   try {
     mustHaveBaseUrl(ROUTING_BASE_URL, "ROUTING_BASE_URL");
