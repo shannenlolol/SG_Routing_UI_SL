@@ -5,7 +5,7 @@ import Tabs from "./components/Tabs";
 import Badge from "./components/Badge";
 import Segmented from "./components/Segmented";
 import MapView from "./components/MapView";
-import RoadTypesPanel from "./components/RoadTypesPanel";
+import RoadTypesTab from "./components/RoadTypesTab";
 import RouteTab from "./components/RouteTab";
 import BlockagesTab from "./components/BlockagesTab";
 import ToastStack from "./components/ToastStack";
@@ -277,7 +277,7 @@ export default function App() {
           )}
 
           {tab === TAB_ROAD_TYPES && (
-            <RoadTypesPanel
+            <RoadTypesTab
               options={validAxisTypes}
               checked={displayAxisTypes}
               loading={roadLayerLoading}

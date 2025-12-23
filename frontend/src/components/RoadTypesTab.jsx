@@ -1,10 +1,9 @@
-// src/components/RoadTypesPanel.jsx
+// src/components/RoadTypesTab.jsx
 import React from "react";
 import { getRoadTypeLabel } from "../utils/roadTypeDescriptions";
-import TransportModeSelector from "./TransportModeSelector";
 import TransportModeIndicator from "./TransportModeIndicator";
 
-export default function RoadTypesPanel({
+export default function RoadTypesTab({
   options,
   checked,
   loading,
