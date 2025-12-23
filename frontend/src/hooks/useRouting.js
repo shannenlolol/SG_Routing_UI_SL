@@ -157,7 +157,7 @@ export function useRouting(serverStatus, blockageGeoJsonRef, transportMode, show
       console.log(resp.features, resp.type);
       const formatTransportMode = transportMode.charAt(0).toUpperCase() + transportMode.slice(1);
       setRouteGeoJson(resp);
-      showToast("good", `${formatTransportMode} route searched successfully.`);
+      showToast("good", `${formatTransportMode} route loaded successfully.`);
     } catch (err) {
       console.log("[route] failed", { reqId, err });
       showToast("bad", err.message || "Unable to get route. Please try again.");

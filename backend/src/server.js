@@ -61,7 +61,7 @@ async function forwardJson(req, res, { url, method }) {
   if (!upstream.ok) {
     const text = await upstream.text().catch(() => "");
     return res.status(status).json({
-      error: "Upstream request failed",
+      error: "Request failed. Please try again.",
       status,
       url,
       details: text,
@@ -177,7 +177,7 @@ app.delete("/api/blockage/:name", async (req, res) => {
     if (!upstream.ok) {
       const text = await upstream.text().catch(() => "");
       return res.status(upstream.status).json({
-        error: "Upstream request failed",
+        error: "Unable to delete blockage. Please try again.",
         status: upstream.status,
         url,
         details: text,

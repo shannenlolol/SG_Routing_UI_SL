@@ -2,6 +2,7 @@
 import React from "react";
 import { getRoadTypeLabel } from "../utils/roadTypeDescriptions";
 import TransportModeSelector from "./TransportModeSelector";
+import TransportModeIndicator from "./TransportModeIndicator";
 
 export default function RoadTypesPanel({
   options,
@@ -20,10 +21,10 @@ export default function RoadTypesPanel({
 
   return (
     <div className="mt-3 space-y-3">
-      {/* Transport Mode Selector
+      {/* Transport Mode Selector */}
       <div className="flex items-center justify-center">
-        <TransportModeSelector value={transportMode} onChange={onTransportModeChange} />
-      </div> */}
+        <TransportModeIndicator selectedMode={transportMode} onModeSelect={onTransportModeChange} />
+      </div>
 
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold text-slate-900">Road Types</div>
@@ -37,13 +38,31 @@ export default function RoadTypesPanel({
         </button>
       </div>
 
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={onSelectAll}
+          disabled={loading || options.length === 0}
+          className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+        >
+          {isAllChecked ? "Refresh All" : "Select All"}
+        </button>
 
+        <button
+          type="button"
+          onClick={onHideAll}
+          disabled={loading || checked.length === 0}
+          className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+        >
+          Hide All
+        </button>
+      </div>
 
-      {/* {isSomeChecked && !isAllChecked && (
+      {isSomeChecked && !isAllChecked && (
         <div className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">
           {checked.length} of {options.length} road types visible
         </div>
-      )} */}
+      )}
 
       <div className="rounded-xl border border-slate-200 bg-white">
         <div className="max-h-[calc(60vh)] overflow-y-auto p-2">
@@ -86,24 +105,6 @@ export default function RoadTypesPanel({
             </div>
           )}
         </div>
-      </div>      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={onSelectAll}
-          disabled={loading || options.length === 0}
-          className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
-        >
-          {isAllChecked ? "Refresh All" : "Select All"}
-        </button>
-
-        <button
-          type="button"
-          onClick={onHideAll}
-          disabled={loading || checked.length === 0}
-          className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
-        >
-          Hide All
-        </button>
       </div>
     </div>
   );
