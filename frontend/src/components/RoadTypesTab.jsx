@@ -1,6 +1,7 @@
 // src/components/RoadTypesTab.jsx
-import React from "react";
+import React, { useEffect } from "react";
 import { getRoadTypeLabel } from "../utils/roadTypeDescriptions";
+import { TRANSPORT_ROAD_TYPES } from "../utils/transportModes";
 import TransportModeIndicator from "./TransportModeIndicator";
 
 export default function RoadTypesTab({
@@ -14,14 +15,54 @@ export default function RoadTypesTab({
   onToggle,
   onHideAll,
   onSelectAll,
+  onSelectRoadTypes,
 }) {
   const isAllChecked = options.length > 0 && options.every((opt) => checked.includes(opt));
   const isSomeChecked = checked.length > 0 && !isAllChecked;
 
+  // Handle transport mode changes for Road Types tab
+  useEffect(() => {
+    if (transportMode === null) {
+      // Deselected - hide all road types
+      onHideAll();
+      return;
+    }
+
+    // Selected a mode - check those road types
+    const roadTypes = TRANSPORT_ROAD_TYPES[transportMode] || [];
+    const validTypes = roadTypes.filter(type => options.includes(type));
+    
+    if (validTypes.length > 0 && typeof onSelectRoadTypes === 'function') {
+      onSelectRoadTypes(validTypes);
+    }
+  }, [transportMode]);
+
+  const handleToggle = (type, checked) => {
+    // Clear transport mode when manually toggling
+    if (typeof onTransportModeChange === 'function') {
+      onTransportModeChange(null);
+    }
+    onToggle(type, checked);
+  };
+
+  const handleSelectAll = () => {
+    // Clear transport mode when selecting all
+    if (typeof onTransportModeChange === 'function') {
+      onTransportModeChange(null);
+    }
+    onSelectAll();
+  };
+
+  const handleHideAll = () => {
+    // Clear transport mode when hiding all
+    if (typeof onTransportModeChange === 'function') {
+      onTransportModeChange(null);
+    }
+    onHideAll();
+  };
+
   return (
     <div className="mt-3 space-y-3">
-      {/* Transport Mode Selector */}
-
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold text-slate-900">Road Types</div>
         <button
@@ -33,11 +74,14 @@ export default function RoadTypesTab({
           Refresh
         </button>
       </div>
+
+      {/* Transport Mode Indicator - Make sure we pass the callback */}
       <div className="flex items-center justify-center">
-        <TransportModeIndicator selectedMode={transportMode} onModeSelect={onTransportModeChange} />
+        <TransportModeIndicator 
+          selectedMode={transportMode} 
+          onModeSelect={onTransportModeChange}
+        />
       </div>
-
-
 
       {isSomeChecked && !isAllChecked && (
         <div className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">
@@ -66,7 +110,7 @@ export default function RoadTypesTab({
                     <input
                       type="checkbox"
                       checked={isChecked}
-                      onChange={(e) => onToggle(type, e.target.checked)}
+                      onChange={(e) => handleToggle(type, e.target.checked)}
                       disabled={loading}
                       className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                     />
@@ -86,10 +130,12 @@ export default function RoadTypesTab({
             </div>
           )}
         </div>
-      </div>      <div className="flex gap-2">
+      </div>
+
+      <div className="flex gap-2">
         <button
           type="button"
-          onClick={onSelectAll}
+          onClick={handleSelectAll}
           disabled={loading || options.length === 0}
           className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
         >
@@ -98,7 +144,7 @@ export default function RoadTypesTab({
 
         <button
           type="button"
-          onClick={onHideAll}
+          onClick={handleHideAll}
           disabled={loading || checked.length === 0}
           className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
         >

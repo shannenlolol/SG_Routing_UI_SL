@@ -64,10 +64,7 @@ export function useRoadTypes(showToast, transportMode) {
     if (cache.has(typeName)) return cache.get(typeName);
 
     const gj = await apiGet(`/axisType/${encodeURIComponent(typeName)}`);
-    console.log("[roadTypes] loaded axis type", typeName, gj);
-    if (gj === "Wait") {
-      throw new Error("Road type \"" + typeName + "\" layer is unavailable. Try again shortly.");
-    }
+
     if (gj && typeof gj === "object" && Array.isArray(gj.features)) {
       for (let i = 0; i < gj.features.length; i += 1) {
         const f = gj.features[i];
@@ -119,19 +116,31 @@ export function useRoadTypes(showToast, transportMode) {
         availableTypes = await fetchAllRoadTypes();
       }
 
+      // Filter based on transport mode
+      const allowedTypes = getRoadTypesForMode(transportMode);
+      console.log("[roadTypes] setting valid road types for", transportMode, allowedTypes);
+      
       try {
-        await apiPost("/changeValidRoadTypes", availableTypes);
+        await apiPost("/changeValidRoadTypes", allowedTypes);
       } catch (err) {
         console.warn("[roadTypes] failed to set valid road types", err);
       }
 
-      const raw = Array.isArray(availableTypes) ? availableTypes.map(normaliseTypeName) : [];
+      // Then fetch what the server considers valid
+      const valid = await apiGet("/validAxisTypes");
+      const raw = Array.isArray(valid) ? valid.map(normaliseTypeName) : [];
       const ordered = sortRoadTypesByImportance(raw);
       
-      setValidAxisTypes(ordered);
+      // Filter to only show types that exist in allAxisTypes and match transport mode
+      const filtered = ordered.filter((type) => 
+        availableTypes.includes(type) &&
+        allowedTypes.some((allowed) => normaliseTypeName(allowed) === type)
+      );
+      
+      setValidAxisTypes(filtered);
 
       const current = displayAxisTypesRef.current;
-      const cleaned = current.filter((t) => ordered.includes(t));
+      const cleaned = current.filter((t) => filtered.includes(t));
 
       if (cleaned.length > 0) {
         setDisplayAxisTypes(cleaned);
@@ -146,10 +155,20 @@ export function useRoadTypes(showToast, transportMode) {
     }
   }
 
-  async function selectAllRoadTypes() {
-    const list = sortRoadTypesByImportance(validAxisTypes);
+  async function selectAllRoadTypes(validListOverride) {
+    const list = Array.isArray(validListOverride)
+      ? validListOverride.slice()
+      : sortRoadTypesByImportance(validAxisTypes);
 
-    const all = Array.from(new Set(list.map(normaliseTypeName))).filter(Boolean);
+    // Filter based on transport mode
+    const allowedTypes = getRoadTypesForMode(transportMode);
+    const filtered = list.filter((type) => 
+      allowedTypes.some((allowed) => 
+        normaliseTypeName(allowed) === normaliseTypeName(type)
+      )
+    );
+
+    const all = Array.from(new Set(filtered.map(normaliseTypeName))).filter(Boolean);
 
     if (all.length === 0) {
       setDisplayAxisTypes([]);
@@ -212,6 +231,74 @@ export function useRoadTypes(showToast, transportMode) {
     }
   }
 
+  async function selectRoadTypes(types) {
+    const filtered = types.filter(t => validAxisTypes.includes(t));
+    
+    if (filtered.length === 0) {
+      return;
+    }
+
+    setDisplayAxisTypes(filtered);
+
+    for (let i = 0; i < filtered.length; i += 1) {
+      addPending(filtered[i]);
+    }
+
+    try {
+      await Promise.all(
+        filtered.map(async (t) => {
+          try {
+            await ensureAxisTypeLoaded(t);
+          } finally {
+            removePending(t);
+          }
+        })
+      );
+
+      rebuildAxisLayer(displayAxisTypesRef.current);
+    } catch (err) {
+      showToast("bad", err.message || "Failed to load road type layer(s)");
+    } finally {
+      pendingSetRef.current.clear();
+      setPendingAxisTypes([]);
+    }
+  }
+
+  async function selectRoadTypes(types) {
+    const filtered = types.filter(t => validAxisTypes.includes(t));
+    
+    if (filtered.length === 0) {
+      setDisplayAxisTypes([]);
+      setAxisTypeGeoJson(null);
+      return;
+    }
+
+    setDisplayAxisTypes(filtered);
+
+    for (let i = 0; i < filtered.length; i += 1) {
+      addPending(filtered[i]);
+    }
+
+    try {
+      await Promise.all(
+        filtered.map(async (t) => {
+          try {
+            await ensureAxisTypeLoaded(t);
+          } finally {
+            removePending(t);
+          }
+        })
+      );
+
+      rebuildAxisLayer(displayAxisTypesRef.current);
+    } catch (err) {
+      showToast("bad", err.message || "Failed to load road type layer(s)");
+    } finally {
+      pendingSetRef.current.clear();
+      setPendingAxisTypes([]);
+    }
+  }
+
   function hideAllRoadTypes() {
     setDisplayAxisTypes([]);
     setAxisTypeGeoJson(null);
@@ -228,6 +315,7 @@ export function useRoadTypes(showToast, transportMode) {
     fetchAllRoadTypes,
     refreshRoadTypes,
     selectAllRoadTypes,
+    selectRoadTypes,
     toggleRoadType,
     hideAllRoadTypes,
   };

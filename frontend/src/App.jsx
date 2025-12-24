@@ -31,7 +31,10 @@ export default function App() {
   const [mapStyle, setMapStyle] = useState("simple");
   const [focusTarget, setFocusTarget] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [transportMode, setTransportMode] = useState(TRANSPORT_MODES.CAR);
+  
+  // SEPARATE transport modes - DO NOT SHARE
+  const [routeTransportMode, setRouteTransportMode] = useState(TRANSPORT_MODES.CAR);
+  const [roadTypesFilterMode, setRoadTypesFilterMode] = useState(null);
 
   const {
     allRoadTypes,
@@ -43,32 +46,28 @@ export default function App() {
     fetchAllRoadTypes,
     refreshRoadTypes,
     selectAllRoadTypes,
+    selectRoadTypes,
     toggleRoadType,
     hideAllRoadTypes,
-  } = useRoadTypes(showToast, transportMode);
+  } = useRoadTypes(showToast, routeTransportMode);
 
-  // Refresh road types when transport mode changes
+  // Only update routing road types when ROUTE transport mode changes
   useEffect(() => {
     async function updateRoadTypesForMode() {
       if (serverStatus !== "ready") return;
       
-      const roadTypes = getRoadTypesForMode(transportMode);
-      console.log("[app] transport mode changed to", transportMode, "setting road types", roadTypes);
+      const roadTypes = getRoadTypesForMode(routeTransportMode);
+      console.log("[app] route transport mode changed to", routeTransportMode, "setting road types", roadTypes);
       
       try {
         await apiPost("/changeValidRoadTypes", roadTypes);
-        
-        // If road types tab is active, refresh the list
-        if (tab === TAB_ROAD_TYPES && validAxisTypes.length > 0) {
-          await refreshRoadTypes();
-        }
       } catch (err) {
         console.warn("[app] failed to update road types for mode", err);
       }
     }
     
     updateRoadTypesForMode();
-  }, [transportMode, serverStatus]);
+  }, [routeTransportMode, serverStatus]);
 
   const {
     blockageGeoJson,
@@ -92,7 +91,7 @@ export default function App() {
     handleSearchRoute,
     scheduleAutoReroute,
     clearRoute,
-  } = useRouting(serverStatus, blockageGeoJsonRef, transportMode, showToast);
+  } = useRouting(serverStatus, blockageGeoJsonRef, routeTransportMode, showToast);
 
   async function handleAddBlockage() {
     setBusy(true);
@@ -269,8 +268,8 @@ export default function App() {
               onClearRoute={clearRoute}
               onSearchRoute={handleSearchRoute}
               onReversePoints={handleReversePoints}
-              transportMode={transportMode}
-              onTransportModeChange={setTransportMode}
+              transportMode={routeTransportMode}
+              onTransportModeChange={setRouteTransportMode}
               busy={busy}
               serverStatus={serverStatus}
             />
@@ -282,12 +281,13 @@ export default function App() {
               checked={displayAxisTypes}
               loading={roadLayerLoading}
               colors={roadTypeColors}
-              transportMode={transportMode}
-              onTransportModeChange={setTransportMode}
+              transportMode={roadTypesFilterMode}
+              onTransportModeChange={setRoadTypesFilterMode}
               onRefresh={refreshRoadTypes}
               onToggle={toggleRoadType}
               onHideAll={hideAllRoadTypes}
               onSelectAll={selectAllRoadTypes}
+              onSelectRoadTypes={selectRoadTypes}
             />
           )}
 
