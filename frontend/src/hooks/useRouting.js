@@ -153,8 +153,6 @@ export function useRouting(serverStatus, blockageGeoJsonRef, transportMode, show
       retryCountRef.current = 0;
       lastRetryOptionsRef.current = null;
 
-      console.log("[route] success", { reqId, gotType: resp.type, gotFeatures: resp.features.length });
-      console.log(resp.features, resp.type);
       const formatTransportMode = transportMode.charAt(0).toUpperCase() + transportMode.slice(1);
       setRouteGeoJson(resp);
       showToast("good", `${formatTransportMode} route loaded successfully.`);

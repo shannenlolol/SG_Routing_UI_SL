@@ -107,36 +107,23 @@ export function useRoadTypes(showToast, transportMode) {
     rebuildAxisLayer(displayAxisTypes);
   }, [displayAxisTypes]);
 
-  async function refreshRoadTypes() {
+    async function refreshAllRoadTypes() {
     addPending("refresh");
     try {
-      // First, fetch all available road types if not already loaded
+
       let availableTypes = allRoadTypes;
       if (availableTypes.length === 0) {
         availableTypes = await fetchAllRoadTypes();
       }
-
-      // Filter based on transport mode
-      const allowedTypes = getRoadTypesForMode(transportMode);
-      console.log("[roadTypes] setting valid road types for", transportMode, allowedTypes);
-      
-      try {
-        await apiPost("/changeValidRoadTypes", allowedTypes);
-      } catch (err) {
-        console.warn("[roadTypes] failed to set valid road types", err);
-      }
-
-      // Then fetch what the server considers valid
-      const valid = await apiGet("/validAxisTypes");
+      const valid = await apiGet("/allAxisTypes");
       const raw = Array.isArray(valid) ? valid.map(normaliseTypeName) : [];
       const ordered = sortRoadTypesByImportance(raw);
-      
+     
       // Filter to only show types that exist in allAxisTypes and match transport mode
       const filtered = ordered.filter((type) => 
-        availableTypes.includes(type) &&
-        allowedTypes.some((allowed) => normaliseTypeName(allowed) === type)
+        availableTypes.includes(type)
       );
-      
+
       setValidAxisTypes(filtered);
 
       const current = displayAxisTypesRef.current;
@@ -146,7 +133,6 @@ export function useRoadTypes(showToast, transportMode) {
         setDisplayAxisTypes(cleaned);
         return;
       }
-
       hideAllRoadTypes();
     } catch (err) {
       showToast("bad", err.message || "Failed to load road types");
@@ -313,7 +299,7 @@ export function useRoadTypes(showToast, transportMode) {
     pendingAxisTypes,
     roadLayerLoading: pendingAxisTypes.length > 0,
     fetchAllRoadTypes,
-    refreshRoadTypes,
+    refreshAllRoadTypes,
     selectAllRoadTypes,
     selectRoadTypes,
     toggleRoadType,

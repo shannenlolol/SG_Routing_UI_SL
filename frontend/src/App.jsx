@@ -44,7 +44,7 @@ export default function App() {
     axisTypeGeoJson,
     roadLayerLoading,
     fetchAllRoadTypes,
-    refreshRoadTypes,
+    refreshAllRoadTypes,
     selectAllRoadTypes,
     selectRoadTypes,
     toggleRoadType,
@@ -248,7 +248,7 @@ export default function App() {
               setSelectionMode(null);
 
               if (v === TAB_ROAD_TYPES && validAxisTypes.length === 0) {
-                await refreshRoadTypes();
+                await refreshAllRoadTypes();
               }
 
               if (v === TAB_BLOCKAGES && !blockageGeoJsonRef.current) {
@@ -283,7 +283,7 @@ export default function App() {
               colors={roadTypeColors}
               transportMode={roadTypesFilterMode}
               onTransportModeChange={setRoadTypesFilterMode}
-              onRefresh={refreshRoadTypes}
+              onRefresh={refreshAllRoadTypes}
               onToggle={toggleRoadType}
               onHideAll={hideAllRoadTypes}
               onSelectAll={selectAllRoadTypes}
