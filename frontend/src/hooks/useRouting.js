@@ -10,7 +10,12 @@ function toNumber(value) {
   return null;
 }
 
-export function useRouting(serverStatus, blockageGeoJsonRef, transportMode, showToast) {
+export function useRouting(
+  serverStatus,
+  blockageGeoJsonRef,
+  transportMode,
+  showToast
+) {
   const [start, setStart] = useState({
     lat: "",
     long: "",
@@ -50,20 +55,30 @@ export function useRouting(serverStatus, blockageGeoJsonRef, transportMode, show
   }, []);
 
   async function handleSearchRoute(options) {
+    console.log("JSANDKJANSDJKAK");
     const opts = options && typeof options === "object" ? options : {};
     const reason = opts.reason ? String(opts.reason) : "ui";
-    const blockagesOverride = opts.blockagesOverride && typeof opts.blockagesOverride === "object"
-      ? opts.blockagesOverride
-      : null;
+    const blockagesOverride =
+      opts.blockagesOverride && typeof opts.blockagesOverride === "object"
+        ? opts.blockagesOverride
+        : null;
 
     if (serverStatus !== "ready") {
-      console.log("[route] blocked: server not ready", { serverStatus });
-      showToast("warn", "Server not ready yet.");
+      const msg =
+        serverStatus === "wait"
+          ? "Server is warming up."
+          : serverStatus === "error"
+          ? "Server is unreachable (check connection)."
+          : "Server status unknown. Please refresh.";
+      showToast("bad", msg);
       return;
     }
 
     if (!startPoint || !endPoint) {
-      console.log("[route] blocked: missing start/end", { startPoint, endPoint });
+      console.log("[route] blocked: missing start/end", {
+        startPoint,
+        endPoint,
+      });
       showToast("warn", "Start and End coordinates must be set.");
       return;
     }
@@ -97,8 +112,12 @@ export function useRouting(serverStatus, blockageGeoJsonRef, transportMode, show
     // IMPORTANT: Set valid road types based on transport mode BEFORE routing
     try {
       const roadTypes = getRoadTypesForMode(transportMode);
-      console.log("[route] setting valid road types for", transportMode, roadTypes);
-      
+      console.log(
+        "[route] setting valid road types for",
+        transportMode,
+        roadTypes
+      );
+
       await apiPost("/changeValidRoadTypes", roadTypes);
     } catch (err) {
       console.log("[route] failed to set road types", { err });
@@ -113,11 +132,19 @@ export function useRouting(serverStatus, blockageGeoJsonRef, transportMode, show
       blockages: sanitiseBlockagesForRoute(blockagesToUse),
     };
 
-    const count = body.blockages && Array.isArray(body.blockages.features)
-      ? body.blockages.features.length
-      : 0;
+    const count =
+      body.blockages && Array.isArray(body.blockages.features)
+        ? body.blockages.features.length
+        : 0;
 
-    console.log("[route] sending", { reqId, reason, start: startPt, end: endPt, blockagesCount: count, transportMode });
+    console.log("[route] sending", {
+      reqId,
+      reason,
+      start: startPt,
+      end: endPt,
+      blockagesCount: count,
+      transportMode,
+    });
 
     try {
       const resp = await apiPost("/route", body);
@@ -133,19 +160,35 @@ export function useRouting(serverStatus, blockageGeoJsonRef, transportMode, show
             scheduleRouteRetry({ reason, blockagesOverride }, "backend_wait");
           } else {
             console.log("[route] retry limit reached", { reqId });
-            showToast("warn", "Route engine still warming up. Try again shortly.");
+            showToast(
+              "warn",
+              "Route engine still warming up. Try again shortly."
+            );
           }
 
           return;
         }
 
-        console.log("[route] bad response shape (string)", { reqId, gotType: "string", resp });
+        console.log("[route] bad response shape (string)", {
+          reqId,
+          gotType: "string",
+          resp,
+        });
         showToast("bad", "Route API returned invalid data.");
         return;
       }
 
-      if (!resp || typeof resp !== "object" || resp.type !== "FeatureCollection" || !Array.isArray(resp.features)) {
-        console.log("[route] bad response shape", { reqId, gotType: typeof resp, resp });
+      if (
+        !resp ||
+        typeof resp !== "object" ||
+        resp.type !== "FeatureCollection" ||
+        !Array.isArray(resp.features)
+      ) {
+        console.log("[route] bad response shape", {
+          reqId,
+          gotType: typeof resp,
+          resp,
+        });
         showToast("bad", "Route API returned invalid data.");
         return;
       }
@@ -153,7 +196,8 @@ export function useRouting(serverStatus, blockageGeoJsonRef, transportMode, show
       retryCountRef.current = 0;
       lastRetryOptionsRef.current = null;
 
-      const formatTransportMode = transportMode.charAt(0).toUpperCase() + transportMode.slice(1);
+      const formatTransportMode =
+        transportMode.charAt(0).toUpperCase() + transportMode.slice(1);
       setRouteGeoJson(resp);
       showToast("good", `${formatTransportMode} route loaded successfully.`);
     } catch (err) {
@@ -170,7 +214,13 @@ export function useRouting(serverStatus, blockageGeoJsonRef, transportMode, show
       return;
     }
     if (serverStatus !== "ready") {
-      console.log("[reroute] skip: server not ready", { serverStatus });
+      const msg =
+        serverStatus === "wait"
+          ? "Server is warming up."
+          : serverStatus === "error"
+          ? "Server is unreachable (check connection)."
+          : "Server status unknown. Please refresh.";
+      showToast("bad", msg);
       return;
     }
 
@@ -178,12 +228,15 @@ export function useRouting(serverStatus, blockageGeoJsonRef, transportMode, show
     rerouteTimerRef.current = window.setTimeout(() => {
       console.log("[reroute] triggering via same handler", {
         hasLastRequest: Boolean(lastRouteRequestRef.current),
-        blockagesCount: blockagesOverride && Array.isArray(blockagesOverride.features)
-          ? blockagesOverride.features.length
-          : (() => {
-              const gj = blockageGeoJsonRef.current;
-              return gj && Array.isArray(gj.features) ? gj.features.length : 0;
-            })(),
+        blockagesCount:
+          blockagesOverride && Array.isArray(blockagesOverride.features)
+            ? blockagesOverride.features.length
+            : (() => {
+                const gj = blockageGeoJsonRef.current;
+                return gj && Array.isArray(gj.features)
+                  ? gj.features.length
+                  : 0;
+              })(),
       });
 
       handleSearchRoute({

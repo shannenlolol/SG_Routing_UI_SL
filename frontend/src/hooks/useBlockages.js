@@ -208,7 +208,7 @@ export function useBlockages(showToast) {
 
       return server;
     } catch (err) {
-      showToast("bad", err.message || "Failed to load blockages");
+      showToast("bad", "Failed to load blockages");
       return null;
     }
   }
@@ -280,7 +280,7 @@ export function useBlockages(showToast) {
       if (onSuccess) onSuccess(synced);
     } catch (err) {
       console.log("[blockage:add] failed", { err });
-      showToast("bad", err.message || "Failed to add blockage");
+      showToast("bad", "Failed to add blockage");
     }
   }
 

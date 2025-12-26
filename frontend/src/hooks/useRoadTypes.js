@@ -50,8 +50,6 @@ export function useRoadTypes(showToast, transportMode) {
       }
       return [];
     } catch (err) {
-      console.error("[roadTypes] failed to fetch all road types", err);
-      showToast("bad", "Failed to fetch available road types");
       return [];
     }
   }
@@ -135,7 +133,7 @@ export function useRoadTypes(showToast, transportMode) {
       }
       hideAllRoadTypes();
     } catch (err) {
-      showToast("bad", err.message || "Failed to load road types");
+      showToast("bad", "Failed to load road types");
     } finally {
       removePending("refresh");
     }

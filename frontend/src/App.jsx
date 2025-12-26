@@ -34,7 +34,7 @@ export default function App() {
 
   // NEW: sidebar state (Google Maps style overlay)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-const leftInsetPx = sidebarCollapsed ? 0 : 340;
+  const leftInsetPx = sidebarCollapsed ? 0 : 340;
 
   // SEPARATE transport modes - DO NOT SHARE
   const [routeTransportMode, setRouteTransportMode] = useState(
@@ -60,7 +60,7 @@ const leftInsetPx = sidebarCollapsed ? 0 : 340;
   // Only update routing road types when ROUTE transport mode changes
   useEffect(() => {
     async function updateRoadTypesForMode() {
-      if (serverStatus !== "ready") return;
+      // if (serverStatus !== "ready") return;
 
       const roadTypes = getRoadTypesForMode(routeTransportMode);
       console.log(
@@ -201,10 +201,13 @@ const leftInsetPx = sidebarCollapsed ? 0 : 340;
   const statusBadge = useMemo(() => {
     if (serverStatus === "ready") return <Badge tone="good">Ready</Badge>;
     if (serverStatus === "wait") return <Badge tone="warn">Warming up</Badge>;
-    if (serverStatus === "error") return <Badge tone="bad">Error</Badge>;
+    if (serverStatus === "error") {
+      showToast("bad", "Failed to reach server");
+      return <Badge tone="bad">Error</Badge>;
+    }
+
     return <Badge tone="neutral">Unknown</Badge>;
   }, [serverStatus]);
-
 
   return (
     <div className="h-full w-full bg-slate-50">
@@ -227,9 +230,9 @@ const leftInsetPx = sidebarCollapsed ? 0 : 340;
             />
           </button>
 
-          {serverError ? (
+          {/* {serverError ? (
             <div className="text-xs text-red-600">{serverError}</div>
-          ) : null}
+          ) : null} */}
         </div>
 
         <div className="text-center">
@@ -265,8 +268,7 @@ const leftInsetPx = sidebarCollapsed ? 0 : 340;
             blockageGeoJson={blockageGeoJson}
             draftBlockage={draftBlockage}
             focusTarget={focusTarget}
-              leftInsetPx={leftInsetPx}
-
+            leftInsetPx={leftInsetPx}
           />
         </div>
 
@@ -289,76 +291,81 @@ const leftInsetPx = sidebarCollapsed ? 0 : 340;
             ) : (
               // Full panel
               <Sidebar>
-                <Tabs
-                  tabs={[
-                    { label: "Route", value: TAB_ROUTE },
-                    { label: "Road Types", value: TAB_ROAD_TYPES },
-                    { label: "Blockages", value: TAB_BLOCKAGES },
-                  ]}
-                  value={tab}
-                  onChange={async (v) => {
-                    setTab(v);
-                    setSelectionMode(null);
+                <div className="flex h-full min-h-0 flex-col">
+                  <Tabs
+                    tabs={[
+                      { label: "Route", value: TAB_ROUTE },
+                      { label: "Road Types", value: TAB_ROAD_TYPES },
+                      { label: "Blockages", value: TAB_BLOCKAGES },
+                    ]}
+                    value={tab}
+                    onChange={async (v) => {
+                      setTab(v);
+                      setSelectionMode(null);
 
-                    if (v === TAB_ROAD_TYPES && validAxisTypes.length === 0) {
-                      await refreshAllRoadTypes();
-                    }
+                      if (v === TAB_ROAD_TYPES && validAxisTypes.length === 0) {
+                        await refreshAllRoadTypes();
+                      }
 
-                    if (v === TAB_BLOCKAGES && !blockageGeoJsonRef.current) {
-                      await handleRefreshBlockages();
-                    }
-                  }}
-                />
-
-                {tab === TAB_ROUTE && (
-                  <RouteTab
-                    start={start}
-                    setStart={setStart}
-                    end={end}
-                    setEnd={setEnd}
-                    selectionMode={selectionMode}
-                    setSelectionMode={setSelectionMode}
-                    onClearRoute={clearRoute}
-                    onSearchRoute={handleSearchRoute}
-                    onReversePoints={handleReversePoints}
-                    transportMode={routeTransportMode}
-                    onTransportModeChange={setRouteTransportMode}
-                    busy={busy}
-                    serverStatus={serverStatus}
+                      if (v === TAB_BLOCKAGES && !blockageGeoJsonRef.current) {
+                        await handleRefreshBlockages();
+                      }
+                    }}
                   />
-                )}
+<div className="min-h-0 flex-1 flex flex-col">
+                      {tab === TAB_ROUTE && (
+                      <RouteTab
+                        start={start}
+                        setStart={setStart}
+                        end={end}
+                        setEnd={setEnd}
+                        selectionMode={selectionMode}
+                        setSelectionMode={setSelectionMode}
+                        onClearRoute={clearRoute}
+                        onSearchRoute={handleSearchRoute}
+                        onReversePoints={handleReversePoints}
+                        transportMode={routeTransportMode}
+                        onTransportModeChange={setRouteTransportMode}
+                        busy={busy}
+                        serverStatus={serverStatus}
+                          showToast={showToast}
 
-                {tab === TAB_ROAD_TYPES && (
-                  <RoadTypesTab
-                    options={validAxisTypes}
-                    checked={displayAxisTypes}
-                    loading={roadLayerLoading}
-                    colors={roadTypeColors}
-                    transportMode={roadTypesFilterMode}
-                    onTransportModeChange={setRoadTypesFilterMode}
-                    onRefresh={refreshAllRoadTypes}
-                    onToggle={toggleRoadType}
-                    onHideAll={hideAllRoadTypes}
-                    onSelectAll={selectAllRoadTypes}
-                    onSelectRoadTypes={selectRoadTypes}
-                  />
-                )}
+                      />
+                    )}
 
-                {tab === TAB_BLOCKAGES && (
-                  <BlockagesTab
-                    newBlockage={newBlockage}
-                    setNewBlockage={setNewBlockage}
-                    selectionMode={selectionMode}
-                    setSelectionMode={setSelectionMode}
-                    onAdd={handleAddBlockage}
-                    onRefresh={handleRefreshBlockages}
-                    onDelete={handleDeleteBlockage}
-                    onFocus={focusOnBlockageFeature}
-                    blockageGeoJson={blockageGeoJson}
-                    busy={busy}
-                    serverStatus={serverStatus}
-                  />
-                )}
+                    {tab === TAB_ROAD_TYPES && (
+                      <RoadTypesTab
+                        options={validAxisTypes}
+                        checked={displayAxisTypes}
+                        loading={roadLayerLoading}
+                        colors={roadTypeColors}
+                        transportMode={roadTypesFilterMode}
+                        onTransportModeChange={setRoadTypesFilterMode}
+                        onRefresh={refreshAllRoadTypes}
+                        onToggle={toggleRoadType}
+                        onHideAll={hideAllRoadTypes}
+                        onSelectAll={selectAllRoadTypes}
+                        onSelectRoadTypes={selectRoadTypes}
+                      />
+                    )}
+
+                    {tab === TAB_BLOCKAGES && (
+                      <BlockagesTab
+                        newBlockage={newBlockage}
+                        setNewBlockage={setNewBlockage}
+                        selectionMode={selectionMode}
+                        setSelectionMode={setSelectionMode}
+                        onAdd={handleAddBlockage}
+                        onRefresh={handleRefreshBlockages}
+                        onDelete={handleDeleteBlockage}
+                        onFocus={focusOnBlockageFeature}
+                        blockageGeoJson={blockageGeoJson}
+                        busy={busy}
+                        serverStatus={serverStatus}
+                      />
+                    )}
+                  </div>
+                </div>
               </Sidebar>
             )}
           </div>
@@ -373,14 +380,16 @@ const leftInsetPx = sidebarCollapsed ? 0 : 340;
             }}
             aria-label={sidebarCollapsed ? "Open panel" : "Collapse panel"}
             title={sidebarCollapsed ? "Open panel" : "Collapse panel"}
-          >{sidebarCollapsed ?
-            <span className="block text-base ml-3 font-semibold leading-none text-slate-600">
-               ›
-            </span>:
-            <span className="block text-base font-semibold leading-none text-slate-600">
-               ‹
-            </span>
-}
+          >
+            {sidebarCollapsed ? (
+              <span className="block text-base ml-3 font-semibold leading-none text-slate-600">
+                ›
+              </span>
+            ) : (
+              <span className="block text-base font-semibold leading-none text-slate-600">
+                ‹
+              </span>
+            )}
           </button>
         </div>
       </div>

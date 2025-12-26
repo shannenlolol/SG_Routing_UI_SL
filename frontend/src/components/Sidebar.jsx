@@ -1,12 +1,11 @@
 // Sidebar.jsx
 import React from "react";
 
-export default function Sidebar({ children, footer }) {
+export default function Sidebar({ children }) {
   return (
     <div className="h-full w-full bg-white">
-      <div className="h-[calc(100%-56px)] px-4 py-3">
+      <div className="h-full px-4 py-2">
         {children}
-        {footer ? <div className="mt-3">{footer}</div> : null}
       </div>
     </div>
   );
