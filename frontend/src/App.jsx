@@ -31,9 +31,14 @@ export default function App() {
   const [mapStyle, setMapStyle] = useState("simple");
   const [focusTarget, setFocusTarget] = useState(null);
   const [busy, setBusy] = useState(false);
-  
+
+  // NEW: sidebar state (Google Maps style overlay)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
   // SEPARATE transport modes - DO NOT SHARE
-  const [routeTransportMode, setRouteTransportMode] = useState(TRANSPORT_MODES.CAR);
+  const [routeTransportMode, setRouteTransportMode] = useState(
+    TRANSPORT_MODES.CAR
+  );
   const [roadTypesFilterMode, setRoadTypesFilterMode] = useState(null);
 
   const {
@@ -55,17 +60,22 @@ export default function App() {
   useEffect(() => {
     async function updateRoadTypesForMode() {
       if (serverStatus !== "ready") return;
-      
+
       const roadTypes = getRoadTypesForMode(routeTransportMode);
-      console.log("[app] route transport mode changed to", routeTransportMode, "setting road types", roadTypes);
-      
+      console.log(
+        "[app] route transport mode changed to",
+        routeTransportMode,
+        "setting road types",
+        roadTypes
+      );
+
       try {
         await apiPost("/changeValidRoadTypes", roadTypes);
       } catch (err) {
         console.warn("[app] failed to update road types for mode", err);
       }
     }
-    
+
     updateRoadTypesForMode();
   }, [routeTransportMode, serverStatus]);
 
@@ -91,7 +101,12 @@ export default function App() {
     handleSearchRoute,
     scheduleAutoReroute,
     clearRoute,
-  } = useRouting(serverStatus, blockageGeoJsonRef, routeTransportMode, showToast);
+  } = useRouting(
+    serverStatus,
+    blockageGeoJsonRef,
+    routeTransportMode,
+    showToast
+  );
 
   async function handleAddBlockage() {
     setBusy(true);
@@ -159,9 +174,8 @@ export default function App() {
   }
 
   function focusOnBlockageFeature(feature) {
-    if (!feature || !feature.geometry || feature.geometry.type !== "Point") {
+    if (!feature || !feature.geometry || feature.geometry.type !== "Point")
       return;
-    }
     if (!Array.isArray(feature.geometry.coordinates)) return;
 
     const lng = Number(feature.geometry.coordinates[0]);
@@ -189,6 +203,7 @@ export default function App() {
     if (serverStatus === "error") return <Badge tone="bad">Error</Badge>;
     return <Badge tone="neutral">Unknown</Badge>;
   }, [serverStatus]);
+
 
   return (
     <div className="h-full w-full bg-slate-50">
@@ -234,81 +249,10 @@ export default function App() {
         </div>
       </div>
 
-      <div className="grid h-[calc(100%-56px)] grid-cols-[340px_1fr]">
-        <Sidebar>
-          <Tabs
-            tabs={[
-              { label: "Route", value: TAB_ROUTE },
-              { label: "Road Types", value: TAB_ROAD_TYPES },
-              { label: "Blockages", value: TAB_BLOCKAGES },
-            ]}
-            value={tab}
-            onChange={async (v) => {
-              setTab(v);
-              setSelectionMode(null);
-
-              if (v === TAB_ROAD_TYPES && validAxisTypes.length === 0) {
-                await refreshAllRoadTypes();
-              }
-
-              if (v === TAB_BLOCKAGES && !blockageGeoJsonRef.current) {
-                await handleRefreshBlockages();
-              }
-            }}
-          />
-
-          {tab === TAB_ROUTE && (
-            <RouteTab
-              start={start}
-              setStart={setStart}
-              end={end}
-              setEnd={setEnd}
-              selectionMode={selectionMode}
-              setSelectionMode={setSelectionMode}
-              onClearRoute={clearRoute}
-              onSearchRoute={handleSearchRoute}
-              onReversePoints={handleReversePoints}
-              transportMode={routeTransportMode}
-              onTransportModeChange={setRouteTransportMode}
-              busy={busy}
-              serverStatus={serverStatus}
-            />
-          )}
-
-          {tab === TAB_ROAD_TYPES && (
-            <RoadTypesTab
-              options={validAxisTypes}
-              checked={displayAxisTypes}
-              loading={roadLayerLoading}
-              colors={roadTypeColors}
-              transportMode={roadTypesFilterMode}
-              onTransportModeChange={setRoadTypesFilterMode}
-              onRefresh={refreshAllRoadTypes}
-              onToggle={toggleRoadType}
-              onHideAll={hideAllRoadTypes}
-              onSelectAll={selectAllRoadTypes}
-              onSelectRoadTypes={selectRoadTypes}
-            />
-          )}
-
-          {tab === TAB_BLOCKAGES && (
-            <BlockagesTab
-              newBlockage={newBlockage}
-              setNewBlockage={setNewBlockage}
-              selectionMode={selectionMode}
-              setSelectionMode={setSelectionMode}
-              onAdd={handleAddBlockage}
-              onRefresh={handleRefreshBlockages}
-              onDelete={handleDeleteBlockage}
-              onFocus={focusOnBlockageFeature}
-              blockageGeoJson={blockageGeoJson}
-              busy={busy}
-              serverStatus={serverStatus}
-            />
-          )}
-        </Sidebar>
-
-        <div className="h-full w-full">
+      {/* Map full width; sidebar overlays and slides like Google Maps */}
+      <div className="relative h-[calc(100%-56px)]">
+        {/* Map layer */}
+        <div className="absolute inset-0">
           <MapView
             mapStyle={mapStyle}
             selectionMode={selectionMode}
@@ -322,11 +266,126 @@ export default function App() {
             focusTarget={focusTarget}
           />
         </div>
+
+        {/* Sidebar overlay layer */}
+        <div
+          className="absolute inset-y-0 left-0"
+          style={{
+            zIndex: 9000,
+            width: 340,
+            transform: sidebarCollapsed
+              ? `translateX(-${340}px)`
+              : "translateX(0px)",
+            transition: "transform 220ms ease",
+          }}
+        >
+          {/* Panel shell: rounded + border + subtle shadow (like the screenshot) */}
+          <div className="h-full overflow-hidden rounded-r-2xl border border-slate-200 bg-white shadow-sm">
+            {sidebarCollapsed ? (
+              <div></div>
+            ) : (
+              // Full panel
+              <Sidebar>
+                <Tabs
+                  tabs={[
+                    { label: "Route", value: TAB_ROUTE },
+                    { label: "Road Types", value: TAB_ROAD_TYPES },
+                    { label: "Blockages", value: TAB_BLOCKAGES },
+                  ]}
+                  value={tab}
+                  onChange={async (v) => {
+                    setTab(v);
+                    setSelectionMode(null);
+
+                    if (v === TAB_ROAD_TYPES && validAxisTypes.length === 0) {
+                      await refreshAllRoadTypes();
+                    }
+
+                    if (v === TAB_BLOCKAGES && !blockageGeoJsonRef.current) {
+                      await handleRefreshBlockages();
+                    }
+                  }}
+                />
+
+                {tab === TAB_ROUTE && (
+                  <RouteTab
+                    start={start}
+                    setStart={setStart}
+                    end={end}
+                    setEnd={setEnd}
+                    selectionMode={selectionMode}
+                    setSelectionMode={setSelectionMode}
+                    onClearRoute={clearRoute}
+                    onSearchRoute={handleSearchRoute}
+                    onReversePoints={handleReversePoints}
+                    transportMode={routeTransportMode}
+                    onTransportModeChange={setRouteTransportMode}
+                    busy={busy}
+                    serverStatus={serverStatus}
+                  />
+                )}
+
+                {tab === TAB_ROAD_TYPES && (
+                  <RoadTypesTab
+                    options={validAxisTypes}
+                    checked={displayAxisTypes}
+                    loading={roadLayerLoading}
+                    colors={roadTypeColors}
+                    transportMode={roadTypesFilterMode}
+                    onTransportModeChange={setRoadTypesFilterMode}
+                    onRefresh={refreshAllRoadTypes}
+                    onToggle={toggleRoadType}
+                    onHideAll={hideAllRoadTypes}
+                    onSelectAll={selectAllRoadTypes}
+                    onSelectRoadTypes={selectRoadTypes}
+                  />
+                )}
+
+                {tab === TAB_BLOCKAGES && (
+                  <BlockagesTab
+                    newBlockage={newBlockage}
+                    setNewBlockage={setNewBlockage}
+                    selectionMode={selectionMode}
+                    setSelectionMode={setSelectionMode}
+                    onAdd={handleAddBlockage}
+                    onRefresh={handleRefreshBlockages}
+                    onDelete={handleDeleteBlockage}
+                    onFocus={focusOnBlockageFeature}
+                    blockageGeoJson={blockageGeoJson}
+                    busy={busy}
+                    serverStatus={serverStatus}
+                  />
+                )}
+              </Sidebar>
+            )}
+          </div>
+
+          {/* Mid-screen vertical pill handle (matches Google Maps) */}
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed((prev) => !prev)}
+            className="absolute top-1/2 right-0  h-14 w-7 -translate-y-1/2 translate-x-1/2 rounded-full border border-slate-200 bg-white shadow-md hover:bg-slate-50"
+            style={{
+              zIndex: 9999, // make sure it's above map controls
+            }}
+            aria-label={sidebarCollapsed ? "Open panel" : "Collapse panel"}
+            title={sidebarCollapsed ? "Open panel" : "Collapse panel"}
+          >{sidebarCollapsed ?
+            <span className="block text-base ml-3 font-semibold leading-none text-slate-600">
+               ›
+            </span>:
+            <span className="block text-base font-semibold leading-none text-slate-600">
+               ‹
+            </span>
+}
+          </button>
+        </div>
       </div>
 
       <ToastStack toasts={toasts} />
-
-      {roadLayerLoading && <LoadingOverlay title="Loading road type layer(s)…" />}
+      {roadLayerLoading && (
+        <LoadingOverlay title="Loading road type layer(s)…" />
+      )}
     </div>
   );
 }

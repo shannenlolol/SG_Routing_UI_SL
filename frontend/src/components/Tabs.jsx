@@ -3,7 +3,7 @@ import React from "react";
 export default function Tabs({ tabs, value, onChange }) {
   return (
     <div className="border-b border-slate-200">
-      <div className="flex gap-6">
+      <div className="grid grid-cols-3 items-center">
         {tabs.map((t) => {
           const active = t.value === value;
           return (
