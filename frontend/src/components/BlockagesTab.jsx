@@ -16,8 +16,10 @@ export default function BlockagesTab({
   serverStatus,
 }) {
   return (
-    <div className="mt-3 space-y-3">
-      <div className="flex items-center justify-between">
+    // Make the whole tab scroll within the sidebar height
+    <div className="mt-3 flex h-[calc(100vh-56px-56px)] flex-col">
+      {/* Header stays visible */}
+      <div className="flex items-center justify-between pb-3">
         <div className="text-sm font-semibold text-slate-900">Blockages</div>
         <button
           type="button"
@@ -29,104 +31,110 @@ export default function BlockagesTab({
         </button>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-3">
-        <div className="text-xs font-semibold text-slate-700">Add blockage</div>
+      {/* Scrollable content area */}
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className="space-y-3 mb-2">
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="text-xs font-semibold text-slate-700">Add blockage</div>
 
-        <div className="mt-2 space-y-2">
-          <input
-            className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-            placeholder="Latitude"
-            value={newBlockage.lat}
-            onChange={(e) => setNewBlockage((p) => ({ ...p, lat: e.target.value }))}
-          />
+            <div className="mt-2 space-y-2">
+              <input
+                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                placeholder="Latitude"
+                value={newBlockage.lat}
+                onChange={(e) => setNewBlockage((p) => ({ ...p, lat: e.target.value }))}
+              />
 
-          <input
-            className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-            placeholder="Longitude"
-            value={newBlockage.long}
-            onChange={(e) => setNewBlockage((p) => ({ ...p, long: e.target.value }))}
-          />
+              <input
+                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                placeholder="Longitude"
+                value={newBlockage.long}
+                onChange={(e) => setNewBlockage((p) => ({ ...p, long: e.target.value }))}
+              />
 
-          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-            <div className="flex items-center justify-between">
-              <div className="text-xs font-semibold text-slate-700">Radius</div>
-              <div className="text-xs text-slate-600">{Number(newBlockage.radius || 0)} m</div>
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-semibold text-slate-700">Radius</div>
+                  <div className="text-xs text-slate-600">{Number(newBlockage.radius || 0)} m</div>
+                </div>
+
+                <input
+                  type="range"
+                  min={50}
+                  max={2000}
+                  step={10}
+                  value={Number(newBlockage.radius || 200)}
+                  onChange={(e) => setNewBlockage((p) => ({ ...p, radius: e.target.value }))}
+                  className="mt-2 w-full"
+                />
+              </div>
+
+              <input
+                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                placeholder="Name"
+                value={newBlockage.name}
+                onChange={(e) => setNewBlockage((p) => ({ ...p, name: e.target.value }))}
+              />
+
+              <textarea
+                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                placeholder="Description (optional)"
+                rows={2}
+                value={newBlockage.description}
+                onChange={(e) => setNewBlockage((p) => ({ ...p, description: e.target.value }))}
+              />
+
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectionMode((prev) => (prev === "blockage" ? null : "blockage"))}
+                  className={
+                    "rounded-lg px-2.5 py-1.5 text-xs font-semibold transition " +
+                    (selectionMode === "blockage"
+                      ? "bg-slate-900 text-white shadow-sm translate-y-[1px]"
+                      : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 active:translate-y-[1px]")
+                  }
+                >
+                  {selectionMode === "blockage" ? "Picking..." : "Pick"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setNewBlockage({
+                      lat: "",
+                      long: "",
+                      radius: 200,
+                      name: "",
+                      description: "",
+                    })
+                  }
+                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 active:translate-y-[1px]"
+                >
+                  Clear
+                </button>
+
+                <div className="flex-1" />
+
+                <button
+                  type="button"
+                  onClick={onAdd}
+                  disabled={busy || serverStatus !== "ready"}
+                  className="rounded-lg bg-blue-400 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-600 disabled:opacity-60"
+                >
+                  Add
+                </button>
+              </div>
             </div>
-
-            <input
-              type="range"
-              min={50}
-              max={2000}
-              step={10}
-              value={Number(newBlockage.radius || 200)}
-              onChange={(e) => setNewBlockage((p) => ({ ...p, radius: e.target.value }))}
-              className="mt-2 w-full"
-            />
           </div>
 
-          <input
-            className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-            placeholder="Name"
-            value={newBlockage.name}
-            onChange={(e) => setNewBlockage((p) => ({ ...p, name: e.target.value }))}
-          />
-
-          <textarea
-            className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-            placeholder="Description (optional)"
-            rows={2}
-            value={newBlockage.description}
-            onChange={(e) => setNewBlockage((p) => ({ ...p, description: e.target.value }))}
-          />
-
-          <div className="mt-2 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setSelectionMode((prev) => (prev === "blockage" ? null : "blockage"))}
-              className={
-                "rounded-lg px-2.5 py-1.5 text-xs font-semibold transition " +
-                (selectionMode === "blockage"
-                  ? "bg-slate-900 text-white shadow-sm translate-y-[1px]"
-                  : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 active:translate-y-[1px]")
-              }
-            >
-              {selectionMode === "blockage" ? "Picking..." : "Pick"}
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                setNewBlockage({
-                  lat: "",
-                  long: "",
-                  radius: 200,
-                  name: "",
-                  description: "",
-                })
-              }
-              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 active:translate-y-[1px]"
-            >
-              Clear
-            </button>
-
-            <div className="flex-1" />
-
-            <button
-              type="button"
-              onClick={onAdd}
-              disabled={busy || serverStatus !== "ready"}
-              className="rounded-lg bg-blue-400 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-600 disabled:opacity-60"
-            >
-              Add
-            </button>
+          {/* Existing list can grow; whole tab scrolls */}
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="text-xs font-semibold text-slate-700">Existing blockages</div>
+            <div className="mt-2">
+              <BlockageList geojson={blockageGeoJson} onDelete={onDelete} onFocus={onFocus} />
+            </div>
           </div>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-slate-200 bg-white p-3">
-        <div className="text-xs font-semibold text-slate-700">Existing blockages</div>
-        <div className="mt-2 max-h-60 overflow-auto">
-          <BlockageList geojson={blockageGeoJson} onDelete={onDelete} onFocus={onFocus} />
         </div>
       </div>
     </div>
@@ -147,7 +155,6 @@ function BlockageList({ geojson, onDelete, onFocus }) {
         const name = props.name || props.id || String(idx);
         const desc = normaliseOptionalText(props.description);
 
-        // Try all possible radius fields from backend
         let radius = null;
         const radiusCandidates = [
           props.radius,

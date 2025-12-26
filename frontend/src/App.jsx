@@ -34,6 +34,7 @@ export default function App() {
 
   // NEW: sidebar state (Google Maps style overlay)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+const leftInsetPx = sidebarCollapsed ? 0 : 340;
 
   // SEPARATE transport modes - DO NOT SHARE
   const [routeTransportMode, setRouteTransportMode] = useState(
@@ -264,6 +265,8 @@ export default function App() {
             blockageGeoJson={blockageGeoJson}
             draftBlockage={draftBlockage}
             focusTarget={focusTarget}
+              leftInsetPx={leftInsetPx}
+
           />
         </div>
 

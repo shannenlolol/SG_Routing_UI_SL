@@ -98,9 +98,13 @@ function pointTooltipHtml(title, pt) {
       )}</div>
       <div style="display:grid; grid-template-columns:auto 1fr; gap:4px 10px;">
         <div style="color:#64748b;">Latitude: </div>
-        <div style="color:#0f172a; font-weight:700;">${escapeHtml(latText)}</div>
+        <div style="color:#0f172a; font-weight:700;">${escapeHtml(
+          latText
+        )}</div>
         <div style="color:#64748b;">Longitude: </div>
-        <div style="color:#0f172a; font-weight:700;">${escapeHtml(lngText)}</div>
+        <div style="color:#0f172a; font-weight:700;">${escapeHtml(
+          lngText
+        )}</div>
       </div>
     </div>
   `;
@@ -227,7 +231,7 @@ function prettifyRoadType(raw) {
 }
 
 function prettifyRoadName(raw) {
-  if (raw === "NULL"){
+  if (raw === "NULL") {
     return "—";
   }
   return raw;
@@ -261,9 +265,13 @@ function routeTooltipHtml(props) {
     <div style="font-size:12px; line-height:1.25; padding:2px 2px;">
       <div style="display:grid; grid-template-columns:auto 1fr; gap:6px 10px;">
         <div style="color:#64748b;">Road Name:</div>
-        <div style="font-weight:700; color:#0f172a;">${escapeHtml(roadName)}</div>
+        <div style="font-weight:700; color:#0f172a;">${escapeHtml(
+          roadName
+        )}</div>
         <div style="color:#64748b;">Road Type:</div>
-        <div style="font-weight:700; color:#0f172a;">${escapeHtml(roadType)}</div>
+        <div style="font-weight:700; color:#0f172a;">${escapeHtml(
+          roadType
+        )}</div>
       </div>
     </div>
   `;
@@ -316,6 +324,7 @@ export default function MapView({
   blockageGeoJson,
   draftBlockage,
   focusTarget,
+  leftInsetPx = 0,
 }) {
   const mapDivRef = useRef(null);
   const mapRef = useRef(null);
@@ -332,6 +341,13 @@ export default function MapView({
   const endMarkerRef = useRef(null);
   const nearestStartMarkerRef = useRef(null);
   const nearestEndMarkerRef = useRef(null);
+
+  const leftInsetPxRef = useRef(leftInsetPx);
+  useEffect(() => {
+    leftInsetPxRef.current = leftInsetPx;
+  }, [leftInsetPx]);
+
+  const prevInsetPxRef = useRef(leftInsetPx);
 
   const selectionModeRef = useRef(selectionMode);
   useEffect(() => {
@@ -390,14 +406,21 @@ export default function MapView({
     const map = L.map(container, {
       center: [1.3521, 103.8198],
       zoom: 12,
-      zoomControl: true,
+      zoomControl: false,
     });
+    L.control.zoom({ position: "bottomright" }).addTo(map);
 
     const tile = L.tileLayer(base.url, { attribution: base.attribution });
     tile.addTo(map);
 
     tileLayerRef.current = tile;
     mapRef.current = map;
+
+    // Initialise inset tracking + shift initial centre so it looks centred in the visible area
+    prevInsetPxRef.current = leftInsetPxRef.current;
+    if (leftInsetPxRef.current > 0) {
+      map.panBy([-(leftInsetPxRef.current / 2), 0], { animate: false });
+    }
 
     map.createPane("route");
     map.getPane("route").style.zIndex = 420;
@@ -450,6 +473,22 @@ export default function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const prev = prevInsetPxRef.current;
+    const next = Number(leftInsetPx) || 0;
+    if (prev === next) return;
+
+    const delta = next - prev;
+
+    // keep the same "visual centre" when the left overlay changes
+    map.panBy([-(delta / 2), 0], { animate: false });
+
+    prevInsetPxRef.current = next;
+  }, [leftInsetPx]);
+
   // Update basemap URL only
   useEffect(() => {
     const map = mapRef.current;
@@ -469,27 +508,75 @@ export default function MapView({
     if (!map) return;
     if (!routeBounds) return;
 
-    map.fitBounds(routeBounds, { padding: [24, 24] });
+    const inset = Number(leftInsetPxRef.current) || 0;
+
+    map.fitBounds(routeBounds, {
+      paddingTopLeft: [inset + 24, 24],
+      paddingBottomRight: [24, 24],
+      animate: false,
+    });
   }, [routeBounds]);
 
   // Focus to blockage selected from list
+  // Focus to blockage selected from list (inset-aware)
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
-    if (!focusTarget) return;
+    if (!map) {
+      return;
+    }
+    if (!focusTarget) {
+      return;
+    }
 
     const lat = Number(focusTarget.lat);
     const lng = Number(focusTarget.long);
     const zoom = Number(focusTarget.zoom);
 
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-
-    if (Number.isFinite(zoom)) {
-      map.setView([lat, lng], zoom, { animate: true });
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return;
     }
 
+    const inset = Number(leftInsetPxRef.current) || 0;
+
+    function applyInsetOffsetOnce() {
+      if (inset > 0) {
+        map.panBy([-(inset / 2), 0], { animate: true });
+      }
+    }
+
+    let handler = null;
+
+    if (Number.isFinite(zoom)) {
+      // Animate to the point, then apply inset offset when the move finishes
+      handler = function onMoveEnd() {
+        map.off("moveend", handler);
+        applyInsetOffsetOnce();
+      };
+
+      map.on("moveend", handler);
+      map.setView([lat, lng], zoom, { animate: true });
+
+      return () => {
+        if (handler) {
+          map.off("moveend", handler);
+        }
+      };
+    }
+
+    // No zoom provided: keep current zoom, still inset-adjust
+    handler = function onMoveEnd() {
+      map.off("moveend", handler);
+      applyInsetOffsetOnce();
+    };
+
+    map.on("moveend", handler);
     map.setView([lat, lng], map.getZoom(), { animate: true });
+
+    return () => {
+      if (handler) {
+        map.off("moveend", handler);
+      }
+    };
   }, [focusTarget]);
 
   // Selected start marker
@@ -570,7 +657,8 @@ export default function MapView({
       nearestStartMarkerRef.current = null;
     }
 
-    const pt = nearestPoints && nearestPoints.start ? nearestPoints.start : null;
+    const pt =
+      nearestPoints && nearestPoints.start ? nearestPoints.start : null;
     const lat = getLat(pt);
     const lng = getLng(pt);
     if (lat === null || lng === null) return;
@@ -582,14 +670,17 @@ export default function MapView({
       zIndexOffset: 900,
     });
 
-    marker.bindTooltip(pointTooltipHtml("Nearest Start on Route", { lat, long: lng }), {
-      permanent: false,
-      sticky: true,
-      opacity: 0.98,
-      direction: "top",
-      offset: [0, -18],
-      className: "sg-tooltip",
-    });
+    marker.bindTooltip(
+      pointTooltipHtml("Nearest Start on Route", { lat, long: lng }),
+      {
+        permanent: false,
+        sticky: true,
+        opacity: 0.98,
+        direction: "top",
+        offset: [0, -18],
+        className: "sg-tooltip",
+      }
+    );
 
     marker.addTo(map);
     nearestStartMarkerRef.current = marker;
@@ -617,14 +708,17 @@ export default function MapView({
       zIndexOffset: 900,
     });
 
-    marker.bindTooltip(pointTooltipHtml("Nearest End on Route", { lat, long: lng }), {
-      permanent: false,
-      sticky: true,
-      opacity: 0.98,
-      direction: "top",
-      offset: [0, -18],
-      className: "sg-tooltip",
-    });
+    marker.bindTooltip(
+      pointTooltipHtml("Nearest End on Route", { lat, long: lng }),
+      {
+        permanent: false,
+        sticky: true,
+        opacity: 0.98,
+        direction: "top",
+        offset: [0, -18],
+        className: "sg-tooltip",
+      }
+    );
 
     marker.addTo(map);
     nearestEndMarkerRef.current = marker;
@@ -809,7 +903,11 @@ export default function MapView({
         return { color: "#2563eb", weight: 5, opacity: 0.9 };
       },
       pointToLayer: function pointToLayer(_feature, latlng) {
-        return L.circleMarker(latlng, { radius: 0, opacity: 0, fillOpacity: 0 });
+        return L.circleMarker(latlng, {
+          radius: 0,
+          opacity: 0,
+          fillOpacity: 0,
+        });
       },
       onEachFeature: function onEachFeature(feature, l) {
         const props = feature && feature.properties ? feature.properties : {};
@@ -847,7 +945,9 @@ export default function MapView({
       style: function style(feature) {
         const props = feature && feature.properties ? feature.properties : {};
         const t = String(props.__axisType || "");
-        const meta = ROAD_TYPE_META_BY_VALUE[t] || ROAD_TYPE_META_BY_VALUE[normaliseTypeName(t)];
+        const meta =
+          ROAD_TYPE_META_BY_VALUE[t] ||
+          ROAD_TYPE_META_BY_VALUE[normaliseTypeName(t)];
         const colour = meta && meta.colour ? meta.colour : "#64748b";
 
         return { color: colour, weight: 3, opacity: 0.95 };
