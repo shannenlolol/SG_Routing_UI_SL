@@ -86,7 +86,7 @@ export function useServerStatus(showToast) {
       if (status === "ready") {
         window.clearInterval(pollTimer.current);
       }
-    }, 3000);
+    }, 10000);
   }
 
   useEffect(() => {

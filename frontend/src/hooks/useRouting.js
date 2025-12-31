@@ -55,7 +55,6 @@ export function useRouting(
   }, []);
 
   async function handleSearchRoute(options) {
-    console.log("JSANDKJANSDJKAK");
     const opts = options && typeof options === "object" ? options : {};
     const reason = opts.reason ? String(opts.reason) : "ui";
     const blockagesOverride =
@@ -193,11 +192,42 @@ export function useRouting(
         return;
       }
 
+      // NEW: ensure there is at least one LineString (route) returned
+      const hasLineString = resp.features.some((f) => {
+        return (
+          f &&
+          f.type === "Feature" &&
+          f.geometry &&
+          f.geometry.type === "LineString" &&
+          Array.isArray(f.geometry.coordinates) &&
+          f.geometry.coordinates.length > 1
+        );
+      });
+
+      if (!hasLineString) {
+        console.log("[route] no LineString returned (no available route)", {
+          reqId,
+          transportMode,
+          featuresCount: resp.features.length,
+        });
+
+        const formatTransportMode =
+          transportMode.charAt(0).toUpperCase() + transportMode.slice(1);
+
+        showToast("bad", `No available route for ${formatTransportMode} route`);
+
+        // Optional: clear old route so it doesn't look like it "worked"
+        setRouteGeoJson(null);
+
+        return;
+      }
+
       retryCountRef.current = 0;
       lastRetryOptionsRef.current = null;
 
       const formatTransportMode =
         transportMode.charAt(0).toUpperCase() + transportMode.slice(1);
+
       setRouteGeoJson(resp);
       showToast("good", `${formatTransportMode} route loaded successfully.`);
     } catch (err) {
