@@ -34,7 +34,7 @@ Verify that the server status is displayed correctly and can be refreshed, and t
 2. Observe the status badge in the top bar.
 3. Click the refresh status button/icon.
 4. Simulate the server not being ready (e.g., no internet), then repeat steps 2–3.
-5. While status is not **Ready**, attempt a server-dependent action (e.g., Search Route or Add Blockage).
+5. While status is not **Ready**, attempt a server-dependent action (e.g., Search Route).
 
 **Expected Results:**
 
@@ -154,7 +154,7 @@ Verify hover tooltips for route segments (road name/type) and markers (lat/long)
 
   * **Latitude**
   * **Longitude**
-* Hovering over a blockage shows blockage details (e.g., name + radius if available).
+* Hovering over a blockage shows blockage details (name and radius).
 * Tooltips disappear when the cursor moves away.
 
 <p>
@@ -212,7 +212,7 @@ Verify that reversing swaps Start/End correctly and supports planning the opposi
 ## Test for 8: Automatic Map Focus
 
 **Objective:**
-Verify the map auto-focuses on the searched route and on selected blockages, and that focus is inset-aware when sidebar is expanded.
+Verify the map auto-focuses on the searched route and on selected blockages.
 
 **Steps:**
 
@@ -303,10 +303,10 @@ Verify blockages can be refreshed, added (typed + map-picked), deleted, and focu
 **Expected Results:**
 
 * Refresh loads blockages into the list and map markers/circles appear.
-* Adding a blockage creates it and it appears after refresh (or immediately if the UI refreshes).
-* Deleting removes it from the list/map after refresh.
-* Selecting a blockage focuses the map on it (inset-aware if sidebar expanded).
-* If auto reroute is implemented, route refresh/recompute is triggered after add/delete where applicable.
+* Adding a blockage creates it.
+* Deleting removes it from the list/map.
+* Selecting a blockage focuses the map on it.
+* As auto reroute is implemented, route refresh/recompute is triggered after add/delete where applicable.
 
 <p>
   <img src="../frontend/public/images/us11_add_blockage.png" width="80%" />

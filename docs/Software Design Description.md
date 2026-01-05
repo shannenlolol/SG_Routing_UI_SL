@@ -1,52 +1,13 @@
 # Software Design Description
 
-## Introduction
+## Sequence Diagrams
 
-The **SG Routing App** lets a user **plan a route and visualise it on an interactive map**, while also exploring **road-type overlays** and managing **routing blockages**.
+The following diagrams show how the **user**, the **React application (`App` + `MapView`)**, and the **Routing APIs** collaborate to implement each feature.
 
-The current scope focuses on a **Vite + React frontend** talking to hosted routing services (returning route and overlay data as **GeoJSON**):
-
-* Checking backend readiness and showing a clear status (**Ready / Warming up / Error**).
-* Defining start/end points via:
-
-  * typed latitude/longitude, or
-  * map-picking (click on map to set a point).
-* Requesting the **shortest route** from the backend and rendering it as a GeoJSON route line on the map.
-* Improving usability with:
-
-  * replacing the previous route on each new search,
-  * reversing start/end points for quick opposite-direction planning,
-  * automatic map focus on the searched route or selected blockage (inset-aware when the sidebar is expanded),
-  * hover tooltips for route segments (road name + type) and markers (latitude + longitude),
-  * a transport mode selector (car/cycle/walk) that updates valid road types for routing,
-  * a road-type overlay tab to toggle road layers,
-  * blockage management (view/add/delete/focus),
-  * a **simple vs default basemap** toggle, and
-  * a collapsible sidebar (Google Maps-style rail).
-
-On the frontend, the main logic lives in:
-
-* `App.jsx` – **overall state + orchestration**, including:
-
-  * server readiness polling,
-  * tab selection, sidebar collapse state, busy/loading states,
-  * start/end inputs and selection mode,
-  * route search/reverse and reroute triggers on blockage changes,
-  * road-type selection and valid-road-types updates.
-* `MapView.jsx` – **Leaflet map component** that:
-
-  * renders the basemap (default or simple),
-  * draws the route GeoJSON,
-  * draws road-type overlay GeoJSON layers,
-  * draws blockages and blockage radii,
-  * renders start/end markers (and nearest-on-route markers),
-  * provides hover tooltips for route/markers,
-  * automatically fits/centres the map for route and blockage focus, **taking sidebar inset into account**.
-* `RouteTab.jsx`, `RoadTypesTab.jsx`, `BlockagesTab.jsx` – sidebar tab UIs for route input/actions, overlay selection, and blockage management.
+- `App` represents the main React component (`App.jsx`)
+- `MapView` represents the Leaflet map component (`MapView.jsx`), and `RoutingAPI` represents the backend endpoints used (e.g., `/ready`, `/route`, `/blockage`, `/axisType/...`).
 
 ---
-
-## Summary of User Story to Sequence Diagram Mapping
 
 | No. | User Story                         | Sequence Diagram Focus                                                           |
 | --- | ---------------------------------- | -------------------------------------------------------------------------------- |
@@ -57,20 +18,13 @@ On the frontend, the main logic lives in:
 | 5   | View Route Details                 | How hover tooltips are derived from `feature.properties` and marker coords       |
 | 6   | Replace Previous Route             | How route state and layers are cleared before rendering a new route              |
 | 7   | Reverse Route                      | How swapping start/end updates state and enables re-search                       |
-| 8   | Automatic Map Focus                | How `fitBounds` / `setView` are applied, including sidebar inset-aware behaviour |
+| 8   | Automatic Map Focus                | How `fitBounds` / `setView` are applied |
 | 9   | Select Transport Mode              | How switching mode updates valid road types (via `/changeValidRoadTypes`)        |
 | 10  | View Road Types Overlay            | How toggled road-type GeoJSON is fetched and rendered                            |
 | 11  | Manage Blockages                   | How blockages are fetched/added/deleted and trigger reroute + focus              |
 | 12  | Toggle Simple Map Style            | How basemap tile URL changes without clearing overlays                           |
 | 13  | Collapse / Expand Sidebar          | How sidebar state changes layout and affects map centring                        |
 
----
-
-## Sequence Diagrams
-
-The following diagrams show how the **user**, the **React application (`App` + `MapView`)**, and the **Routing APIs** collaborate to implement each feature.
-
-For brevity, `App` represents the main React component (`App.jsx`), `MapView` represents the Leaflet map component (`MapView.jsx`), and `RoutingAPI` represents the backend endpoints used (e.g., `/ready`, `/route`, `/blockage`, `/axisType/...`).
 
 ---
 
@@ -99,7 +53,7 @@ sequenceDiagram
 ```
 
 **Explanation:**
-The app polls or the user refreshes `/ready`. The status badge informs the user of the server status.
+The status badge informs the user of the server status.
 
 ---
 
@@ -358,7 +312,7 @@ sequenceDiagram
 
     User->>App: Click blockage in list
     App->>MapView: focusTarget updated
-    MapView->>User: Map centres on blockage (inset-aware)
+    MapView->>User: Map centres on blockage
 ```
 
 **Explanation:**

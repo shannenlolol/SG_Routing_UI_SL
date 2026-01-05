@@ -130,7 +130,7 @@
 
 * After a successful route search, the map shall automatically fit to the route’s bounds with padding so the full route is visible.
 * When a blockage is selected from the list, the map shall centre/focus on that blockage location.
-* When the sidebar is expanded, focusing/fit behaviour shall account for the visible map area (i.e., inset-aware centring so the focused feature is not hidden behind the sidebar).
+* When the sidebar is expanded, focusing/fit behaviour shall account for the visible map area.
 
 ---
 
@@ -176,8 +176,8 @@
   * name
   * optional description
 * The system shall allow setting blockage coordinates via map picking when “Pick blockage” mode is active.
-* The system shall allow deleting a blockage by name.
-* Selecting a blockage from the list shall focus the map on the blockage location (inset-aware if sidebar is expanded).
+* The system shall allow deleting a blockage.
+* Selecting a blockage from the list shall focus the map on the blockage location.
 
 ---
 

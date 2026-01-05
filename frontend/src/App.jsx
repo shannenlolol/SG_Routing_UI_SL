@@ -60,8 +60,6 @@ export default function App() {
   // Only update routing road types when ROUTE transport mode changes
   useEffect(() => {
     async function updateRoadTypesForMode() {
-      // if (serverStatus !== "ready") return;
-
       const roadTypes = getRoadTypesForMode(routeTransportMode);
       console.log(
         "[app] route transport mode changed to",
