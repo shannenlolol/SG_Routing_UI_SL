@@ -356,6 +356,30 @@ GET https://routing-web-service-ityenzhnyq-an.a.run.app/blockage
 **200 Response**
 GeoJSON (FeatureCollection) containing blockage point features (and associated properties such as name and radius/distance fields). 
 
+```json
+{
+    "items": "blockages",
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    103.934433,
+                    1.323997
+                ]
+            },
+            "properties": {
+                "name": "testing blockage 1",
+                "description": "description 1",
+                "distance (meters)": 200
+            }
+        }
+    ]
+}
+```
+
 ---
 
 ### 2.8 Add a New Blockage
@@ -421,4 +445,28 @@ DELETE https://routing-web-service-ityenzhnyq-an.a.run.app/blockage/testing%20bl
 
 **Success Criteria**
 
-* A successful request shall return HTTP 200 (or other success status as implemented by the backend). 
+* A successful request shall return HTTP 200 and the GeoJSON containing exisiting blockages.
+
+```json
+{
+    "items": "blockages",
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    103.934433,
+                    1.323997
+                ]
+            },
+            "properties": {
+                "name": "testing blockage 1",
+                "description": "description 1",
+                "distance (meters)": 200
+            }
+        }
+    ]
+}
+```

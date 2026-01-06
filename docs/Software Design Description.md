@@ -155,7 +155,7 @@ sequenceDiagram
 
     User->>MapView: Hover blockage marker
     MapView->>MapView: Read blockage properties (name/radius/desc)
-    MapView->>User: Tooltip shows blockage details
+    MapView->>User: Tooltip shows Blockage Name + Radius
 ```
 
 **Explanation:**

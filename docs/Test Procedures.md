@@ -15,11 +15,10 @@ Each test procedure corresponds to a user story (**1–14**) and validates its a
 | 7   | Reverse Route                      | user    | reverse (swap) the start and end points                                     | I can quickly plan the opposite direction                    |
 | 8   | Automatic Map Focus                | user    | have the map automatically focus on the searched route or selected blockage | the relevant area is visible without manual panning/zooming  |
 | 9   | Select Transport Mode              | user    | choose a transport mode (car/cycle/walk)                                    | the route uses suitable road types for my travel method      |
-| 10  | View Road Types Overlay            | user    | toggle road-type layers on the map                                          | I can explore different road network types visually          |
-| 11  | Manage Road Types Used for Routing | user    | update which road types are used by the routing algorithm                   | different routing behaviour can be achieved                  |
-| 12  | Manage Blockages                   | user    | view, add, delete, and focus on blockages                                   | routing can avoid blocked regions and testing is easier      |
-| 13  | Toggle Simple Map Style            | user    | toggle between a normal and a simpler basemap                               | a more readable map view can be chosen when needed           |
-| 14  | Collapse / Expand Sidebar          | user    | collapse the sidebar into a compact rail and reopen it                      | more map space is available when needed                      |
+| 10  | View Road Types Overlay            | user    | toggle road-type layers on the map                                          | I can explore different road network types visually          |            |
+| 11  | Manage Blockages                   | user    | view, add, delete, and focus on blockages                                   | routing can avoid blocked regions and testing is easier      |
+| 12  | Toggle Simple Map Style            | user    | toggle between a normal and a simpler basemap                               | a more readable map view can be chosen when needed           |
+| 13  | Collapse / Expand Sidebar          | user    | collapse the sidebar into a compact rail and reopen it                      | more map space is available when needed                      |
 
 ---
 
@@ -116,13 +115,12 @@ Verify that a successfully returned route is visible on the map and that normal 
 1. Perform a successful route search (User Story 3).
 2. Pan the map by dragging.
 3. Zoom in/out using the zoom controls.
-4. Clear the route (if a Clear action exists in the Route tab), or refresh the page before searching.
 
 **Expected Results:**
 
 * The route polyline is visible after successful search.
 * Zoom and pan work as expected.
-* When no route is loaded, the map shows only the basemap (and any enabled overlays like road types/blockages).
+* When no route is loaded, the map shows only the basemap (and any enabled overlays like road types/blockages) and an error message is displayed.
 
 <p>
   <img src="../frontend/public/images/us3_route_success.png" width="48%" />
@@ -142,7 +140,7 @@ Verify hover tooltips for route segments (road name/type) and markers (lat/long)
 3. Hover over the Start marker.
 4. Hover over the End marker.
 5. If nearest markers are displayed, hover over them too.
-6. Ensure blockages are visible (refresh blockages if needed) and hover over a blockage marker.
+6. Hover over a blockage marker.
 
 **Expected Results:**
 
@@ -154,7 +152,10 @@ Verify hover tooltips for route segments (road name/type) and markers (lat/long)
 
   * **Latitude**
   * **Longitude**
-* Hovering over a blockage shows blockage details (name and radius).
+* Hovering over a blockage shows  a tooltip with:
+  * **Name**
+  * **Radius**
+
 * Tooltips disappear when the cursor moves away.
 
 <p>
@@ -219,10 +220,9 @@ Verify the map auto-focuses on the searched route and on selected blockages.
 1. Expand the sidebar (not collapsed).
 2. Search for a valid route and observe the map view after it loads.
 3. Collapse the sidebar to the compact rail.
-4. Search for another valid route and observe the map view after it loads.
-5. Go to **Blockages** tab and refresh blockages.
-6. Click a blockage from the list to focus it.
-7. Repeat step 6 once with sidebar expanded and once with sidebar collapsed.
+4. Go to **Blockages** tab and refresh blockages.
+5. Click a blockage from the list to focus it.
+6. Repeat step 5 once with sidebar expanded and once with sidebar collapsed.
 
 **Expected Results:**
 
@@ -263,7 +263,7 @@ Verify that selecting transport mode updates routing behaviour and road-type val
 ## Test for 10: View Road Types Overlay
 
 **Objective:**
-Verify that road-type layers can be toggled on/off and rendered without clearing the route.
+Verify that road-type layers can be toggled on/off and displayed on the map.
 
 **Steps:**
 
@@ -277,7 +277,7 @@ Verify that road-type layers can be toggled on/off and rendered without clearing
 
 * Selected road-type overlays appear as line layers on the map.
 * Multiple overlays can be displayed together.
-* Toggling overlays does not clear the existing route.
+* Toggling overlays does not clear an existing route.
 
 <p>
   <img src="../frontend/public/images/us10_overlays_on.png" width="80%" />
@@ -304,9 +304,11 @@ Verify blockages can be refreshed, added (typed + map-picked), deleted, and focu
 
 * Refresh loads blockages into the list and map markers/circles appear.
 * Adding a blockage creates it.
+* Adding a blockage with the same name as an exisiting blockage displays an error.
+* Adding a blockage with invalid coordinates displays an error.
 * Deleting removes it from the list/map.
 * Selecting a blockage focuses the map on it.
-* As auto reroute is implemented, route refresh/recompute is triggered after add/delete where applicable.
+* As auto reroute is implemented, route recompute is triggered after blockage add/delete where applicable.
 
 <p>
   <img src="../frontend/public/images/us11_add_blockage.png" width="80%" />
@@ -360,7 +362,7 @@ Verify the sidebar can collapse into a compact rail and reopen, remains usable f
 * Sidebar collapses into a compact rail and expands back correctly.
 * Rail buttons allow access to the main tabs.
 * Map remains interactive in both states.
-* Map focus behaviour still centres content correctly (especially for route fit and blockage focus).
+* Map focus behaviour still centres content correctly.
 
 <p>
   <img src="../frontend/public/images/us13_sidebar_expanded.png" width="48%" />
@@ -368,24 +370,3 @@ Verify the sidebar can collapse into a compact rail and reopen, remains usable f
 </p>
 
 ---
-
-### AI Used
-
-AI assistance (OpenAI’s ChatGPT) was used in the development of this project to:
-
-* Refine user stories, acceptance criteria, and test procedures.
-* Help draft sequence diagrams in Mermaid.
-* Assist with React + Leaflet coding and UI behaviour.
-
-*Note:* Documentation text was refined with AI assistance strictly as a writing and coding support tool.
-
----
-
-### External Tools
-
-The following external tools and libraries were used in this project:
-
-* **React + Vite** – frontend framework and development environment.
-* **Leaflet** – interactive map rendering.
-* **OpenStreetMap & Carto basemap tiles** – map data and tile sources for default and simple styles.
-* **Postman** – used for testing and inspecting API endpoints.

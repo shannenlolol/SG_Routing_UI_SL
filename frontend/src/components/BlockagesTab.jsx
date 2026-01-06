@@ -35,36 +35,61 @@ export default function BlockagesTab({
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
         <div className="space-y-3 mb-2">
           <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <div className="text-xs font-semibold text-slate-700">Add blockage</div>
+            <div className="text-xs font-semibold text-slate-700">
+              Add blockage
+            </div>
 
             <div className="mt-2 space-y-2">
               <input
                 className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
                 placeholder="Latitude"
                 value={newBlockage.lat}
-                onChange={(e) => setNewBlockage((p) => ({ ...p, lat: e.target.value }))}
+                onChange={(e) =>
+                  setNewBlockage((p) => ({ ...p, lat: e.target.value }))
+                }
               />
 
               <input
                 className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
                 placeholder="Longitude"
                 value={newBlockage.long}
-                onChange={(e) => setNewBlockage((p) => ({ ...p, long: e.target.value }))}
+                onChange={(e) =>
+                  setNewBlockage((p) => ({ ...p, long: e.target.value }))
+                }
               />
 
               <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                 <div className="flex items-center justify-between">
-                  <div className="text-xs font-semibold text-slate-700">Radius</div>
-                  <div className="text-xs text-slate-600">{Number(newBlockage.radius || 0)} m</div>
+                  <div className="text-xs font-semibold text-slate-700">
+                    Radius
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={0}
+                      step={10}
+                      value={newBlockage.radius || 0}
+                      onChange={(e) =>
+                        setNewBlockage((p) => ({
+                          ...p,
+                          radius: e.target.value,
+                        }))
+                      }
+                      className="w-20 text-xs text-slate-600 border border-slate-300 rounded px-2 py-0.5 text-right"
+                    />
+                    <span className="text-xs text-slate-600">m</span>
+                  </div>
                 </div>
 
                 <input
                   type="range"
-                  min={50}
-                  max={2000}
+                  min={0}
+                  max={10000}
                   step={10}
                   value={Number(newBlockage.radius || 200)}
-                  onChange={(e) => setNewBlockage((p) => ({ ...p, radius: e.target.value }))}
+                  onChange={(e) =>
+                    setNewBlockage((p) => ({ ...p, radius: e.target.value }))
+                  }
                   className="mt-2 w-full"
                 />
               </div>
@@ -73,7 +98,9 @@ export default function BlockagesTab({
                 className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
                 placeholder="Name"
                 value={newBlockage.name}
-                onChange={(e) => setNewBlockage((p) => ({ ...p, name: e.target.value }))}
+                onChange={(e) =>
+                  setNewBlockage((p) => ({ ...p, name: e.target.value }))
+                }
               />
 
               <textarea
@@ -81,13 +108,19 @@ export default function BlockagesTab({
                 placeholder="Description (optional)"
                 rows={2}
                 value={newBlockage.description}
-                onChange={(e) => setNewBlockage((p) => ({ ...p, description: e.target.value }))}
+                onChange={(e) =>
+                  setNewBlockage((p) => ({ ...p, description: e.target.value }))
+                }
               />
 
               <div className="mt-2 flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setSelectionMode((prev) => (prev === "blockage" ? null : "blockage"))}
+                  onClick={() =>
+                    setSelectionMode((prev) =>
+                      prev === "blockage" ? null : "blockage"
+                    )
+                  }
                   className={
                     "rounded-lg px-2.5 py-1.5 text-xs font-semibold transition " +
                     (selectionMode === "blockage"
@@ -130,9 +163,15 @@ export default function BlockagesTab({
 
           {/* Existing list can grow; whole tab scrolls */}
           <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <div className="text-xs font-semibold text-slate-700">Existing blockages</div>
+            <div className="text-xs font-semibold text-slate-700">
+              Existing blockages
+            </div>
             <div className="mt-2">
-              <BlockageList geojson={blockageGeoJson} onDelete={onDelete} onFocus={onFocus} />
+              <BlockageList
+                geojson={blockageGeoJson}
+                onDelete={onDelete}
+                onFocus={onFocus}
+              />
             </div>
           </div>
         </div>
@@ -142,7 +181,9 @@ export default function BlockagesTab({
 }
 
 function BlockageList({ geojson, onDelete, onFocus }) {
-  const features = Array.isArray(geojson && geojson.features) ? geojson.features : [];
+  const features = Array.isArray(geojson && geojson.features)
+    ? geojson.features
+    : [];
 
   if (features.length === 0) {
     return <div className="text-xs text-slate-500">No blockages loaded.</div>;
@@ -195,12 +236,20 @@ function BlockageList({ geojson, onDelete, onFocus }) {
                 }}
                 className="flex-1 text-left"
               >
-                <div className="text-sm font-semibold text-slate-900">{String(name)}</div>
-                {desc ? <div className="text-xs text-slate-600">{desc}</div> : null}
+                <div className="text-sm font-semibold text-slate-900">
+                  {String(name)}
+                </div>
+                {desc ? (
+                  <div className="text-xs text-slate-600">{desc}</div>
+                ) : null}
                 {radius !== null ? (
-                  <div className="mt-1 text-[11px] text-slate-500">Radius: {radius} m</div>
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    Radius: {radius} m
+                  </div>
                 ) : (
-                  <div className="mt-1 text-[11px] text-slate-400">Radius: unknown</div>
+                  <div className="mt-1 text-[11px] text-slate-400">
+                    Radius: unknown
+                  </div>
                 )}
               </button>
 

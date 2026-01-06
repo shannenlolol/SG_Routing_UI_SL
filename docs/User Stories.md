@@ -30,7 +30,7 @@
 
 * The system shall display the current server status (e.g., **Warming up** / **Ready** / **Error**).
 * The system shall provide a refresh control that triggers a new readiness check.
-* When the server is not ready, server-dependent actions (e.g., routing search, adding blockages) shall display an error.
+* When the server is not ready, server-dependent actions (e.g., route search) shall display an error.
 
 ---
 
@@ -44,7 +44,6 @@
 * The system shall provide inputs for **Start** and **End** coordinates (latitude and longitude).
 * The system shall allow points to be set by **map click** when a “Pick start” or “Pick end” mode is active.
 * When a point is picked, the system shall populate the corresponding input fields and show a confirmation message.
-* The system shall accept optional descriptions for points (if supported in the UI).
 
 ---
 
@@ -58,7 +57,7 @@
 * When the user triggers “Search Route”, the system shall validate that start and end coordinates are present and numeric.
 * If validation fails, an inline error message shall be shown and the request shall not be sent.
 * If validation passes, the system shall call the backend routing endpoint and load the returned GeoJSON route.
-* If the server is not ready, route search shall be disabled or an appropriate message shall be shown.
+* If the server is not ready, route search will display an error message.
 
 ---
 
@@ -71,7 +70,7 @@
 
 * The system shall render the returned route as a visible polyline overlay on the Leaflet map.
 * The user shall be able to pan and zoom using standard map interactions and zoom controls.
-* If no route is loaded, the map shall show only the basemap (and any enabled overlays such as road types/blockages).
+* If no route is loaded, the map shall show only the basemap and display an error message.
 
 ---
 
@@ -82,15 +81,17 @@
 
 **Acceptance Criteria**
 
-* When the user hovers over a **route segment** (line), the system shall display a tooltip showing at minimum:
+* When the user hovers over a **route segment** (line), the system shall display a tooltip showing:
 
   * **Road Name**
   * **Road Type**
-* When the user hovers over a **point marker** (start/end/nearest start/nearest end), the system shall display a tooltip showing at minimum:
+* When the user hovers over a **point marker** (start/end/nearest start/nearest end), the system shall display a tooltip showing:
 
   * **Latitude**
   * **Longitude**
-* When the user hovers over a **blockage marker**, the system shall display a tooltip showing blockage details (e.g., name and radius if available).
+* When the user hovers over a **blockage marker**, the system shall display a tooltip showing:
+  * **name**
+  * **radius**
 * Tooltips shall be non-blocking and disappear when the cursor moves away.
 
 ---
@@ -157,7 +158,7 @@
 * The system shall list available road types for selection.
 * The system shall allow multiple road types to be toggled on/off.
 * Selecting a road type shall load and display its GeoJSON layer on the map.
-* Toggling road types shall not remove the currently displayed route.
+* Toggling road types shall not remove a currently displayed route.
 
 ---
 
@@ -190,7 +191,7 @@
 
 * The system shall provide a map style toggle (e.g., **Default** / **Simple**).
 * When set to Default, the map shall use the standard OpenStreetMap tile layer.
-* When set to Simple, the map shall switch to a simplified basemap (e.g., a light Carto style).
+* When set to Simple, the map shall switch to a simplified basemap.
 * Toggling the basemap shall not clear the route, road-type overlays, or blockage layers.
 
 ---
